@@ -1,3 +1,5 @@
+import { INotificationSetting } from "./INotificationSetting";
+import { IPaymentMethod } from "./IPaymentMethod";
 
 export interface IProfile {
     username: string;
@@ -6,6 +8,8 @@ export interface IProfile {
     shareAnalytics: boolean;
     viewAddressInfo: boolean;
     imgPath?: string;
+    paymentMethod: Array<IPaymentMethod>;
+    notifications: INotificationSetting[];
 }
 
 export interface IAddress {
