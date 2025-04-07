@@ -99,7 +99,7 @@ export class UserRepository {
     user?: User,
     skip?: number,
     take?: number
-  ): Promise<User[] | null> {
+  ) {
     try {
       let userData: User[] = [];
 
@@ -109,8 +109,6 @@ export class UserRepository {
             deleted: false,
           },
         });
-
-        return userData;
       } else {
         userData = await this.repo.find({
           where: [
@@ -125,9 +123,9 @@ export class UserRepository {
             created: "DESC",
           },
         });
-
-        return userData;
       }
+      
+      return userData;
     } catch (error) {
       if (error instanceof Error) {
         throw error.message;
