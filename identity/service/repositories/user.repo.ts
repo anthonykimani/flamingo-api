@@ -6,6 +6,7 @@ import dotenv from "dotenv";
 import bcrypt from "bcrypt";
 import { RegistrationStatus } from "../enums/RegistrationStatus";
 import { Format } from "../utils/format/format";
+import { UserRole } from "../enums/UserRole";
 
 export class UserRepository {
   private repo: Repository<User>;
@@ -40,6 +41,7 @@ export class UserRepository {
         user.phoneNumberConfirmStatus = RegistrationStatus.INITIATED;
         user.countryCode = this.defaultCountryCode;
         user.emailConfirmed = false;
+        user.role = UserRole.PLAYER;
         user.username = user.username;
         user.password = user.password
           ? await this.hashPassword(user.password, this.config.saltRounds)
