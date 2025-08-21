@@ -20,7 +20,7 @@ import { Game } from './game.entity';
     @Column({ nullable: true })
     userId?: string; 
   
-    @ManyToOne(() => Game, (game: Game) => game.players)
+    @ManyToOne(() => Game, (game: Game) => game.gamePlayers)
     @JoinColumn({ name: 'gameId' })
     game: Game;
   
@@ -33,7 +33,7 @@ import { Game } from './game.entity';
     @Column({ type: 'int', nullable: true })
     score?: number;
   
-    @Column({ type: 'boolean', default: false })
+    @Column({ type: 'bool', default: false })
     isWinner: boolean;
   
     @CreateDateColumn()
