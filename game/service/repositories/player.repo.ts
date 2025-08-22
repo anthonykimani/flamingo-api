@@ -43,7 +43,7 @@ export class PlayerRepository {
 
     /**
      * Get All Players
-     * @param player 
+     * @param player Player Data
      * @return Player List
      */
     async getAllPlayers(
