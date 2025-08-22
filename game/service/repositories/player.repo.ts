@@ -90,4 +90,27 @@ export class PlayerRepository {
         }
     }
 
+    /**
+     * Get a Player by Id
+     * @param id
+     * @return Player
+     */
+    async getPlayerById(id: string): Promise<Player | null> {
+        try {
+            if(!id) return null;
+
+            let playerData = await this.repo.find({
+                where: [{ id: id }],
+                take: 1,
+            });
+            
+            return playerData && playerData.length > 0 ? playerData[0] : null;
+        } catch (error) {
+            if (error instanceof Error) {
+                throw error.message;
+            } else {
+                throw error;
+            }
+        }
+    }
 }
