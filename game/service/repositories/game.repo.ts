@@ -22,12 +22,12 @@ export class GameRepository {
         try {
             if (!game.id) {
                 game.quiz = game.quiz,
-                game.gameTitle = game.gameTitle,
-                game.entryFee = game.entryFee,
-                game.maxPlayers = game.maxPlayers,
-                game.status = GameState.CREATED,
-                game.createdAt = new Date(),
-                game.gamePlayers = []
+                    game.gameTitle = game.gameTitle,
+                    game.entryFee = game.entryFee,
+                    game.maxPlayers = game.maxPlayers,
+                    game.status = GameState.CREATED,
+                    game.createdAt = new Date(),
+                    game.gamePlayers = []
             }
 
             let gameData = await this.repo.save(game);
@@ -55,7 +55,7 @@ export class GameRepository {
         try {
             let gameData: Game[] = [];
 
-            if(!gameData || Object.keys(gameData).length === 0) {
+            if (!gameData || Object.keys(gameData).length === 0) {
                 gameData = await this.repo.find({
                     where: {
                         status: GameState.CREATED,
@@ -82,7 +82,31 @@ export class GameRepository {
                 throw error.message;
             } else {
                 throw error;
-            }            
+            }
+        }
+    }
+
+    /**
+     * Get a Game by Id
+     * @param id
+     * @return Game
+     */
+    async getGameById(id: string): Promise<Game | null> {
+        try {
+            if (!id) return null;
+
+            let gameData = await this.repo.find({
+                where: [{ id: id }],
+                take: 1
+            });
+
+            return gameData && gameData.length > 0 ? gameData[0] : null;
+        } catch (error) {
+            if (error instanceof Error) {
+                throw error.message;
+            } else {
+                throw error;
+            }
         }
     }
 }
