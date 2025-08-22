@@ -13,8 +13,8 @@ export class PlayerRepository {
 
     /**
      * Save Player
-     * @param 
-     * @returns
+     * @param player Player data
+     * @returns Player
      */
     async savePlayer(player: Player): Promise<Player | null> {
         try {
@@ -41,5 +41,53 @@ export class PlayerRepository {
         }
     }
 
-    
+    /**
+     * Get All Players
+     * @param player 
+     * @return Player List
+     */
+    async getAllPlayers(
+        player?: Player,
+        skip?: number,
+        take?: number
+    ) {
+        try {
+            let playerData: Player[] = [];
+
+            if (!player || Object.keys(player).length === 0) {
+                playerData = await this.repo.find({
+                    where: {
+                        isActive: true,
+                    },
+                });
+            } else {
+                playerData = await this.repo.find({
+                    where: [
+                        { id: player.id },
+                        { address: player.address },
+                        { userId: player.userId },
+                        { game: player.game },
+                        { gameId: player.gameId },
+                        { answers: player.answers },
+                        { score: player.score },
+                        { isWinner: player.isWinner },
+                        { isActive: player.isActive },
+                        { joinedAt: player.joinedAt }
+                    ],
+                    order: {
+                        joinedAt: "DESC",
+                    }
+                })
+            }
+
+            return playerData;
+        } catch (error) {
+            if (error instanceof Error) {
+                throw error.message;
+            } else {
+                throw error;
+            }
+        }
+    }
+
 }
