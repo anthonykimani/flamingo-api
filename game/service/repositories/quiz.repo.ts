@@ -1,7 +1,7 @@
 import { Repository } from "typeorm";
 import { Quiz } from "../models/quiz.entity";
 import AppDataSource from "../configs/ormconfig";
-import dotenv from "dotenv"
+import dotenv from "dotenv";
 
 
 export class QuizRepository {
@@ -27,7 +27,7 @@ export class QuizRepository {
                 quiz.games = quiz.games
             }
             
-            let quizData = await this.saveQuiz(quiz);
+            let quizData = await this.repo.save(quiz);
             return quizData
         } catch (error) {
             throw error;

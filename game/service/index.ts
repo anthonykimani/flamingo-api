@@ -5,6 +5,7 @@ import cors from "cors";
 import corsOptions from "./configs/corsconfig";
 import AppDataSource from "./configs/ormconfig";
 import gameRoutes from "./routes/index.games"
+import quizRoutes from "./routes/index.quizzes"
 
 
 export const app = express();
@@ -16,6 +17,7 @@ app.enable("trust proxy");
 app.use(cors(corsOptions));
 app.use(express.json());
 app.use("/games", gameRoutes)
+app.use("/quizzes", quizRoutes)
 
 AppDataSource.initialize()
   .then(() => {
