@@ -31,4 +31,34 @@ export class QuestionRepository {
             throw error;
         }
     }
+
+    /**
+     * Get All Questions
+     * @param question Question
+     * @returns Question
+     */
+    async getAllQuestions(
+        question?: Question,
+        skip?: number,
+        take?: number
+    ) {
+        try {
+            let questionData: Question[] = [];
+
+            if(!questionData || Object.keys(questionData).length === 0) {
+                questionData = await this.repo.find({
+                    where: [
+                        { id: question?.id },
+                        { quiz: question?.quiz },
+                        { question: question?.question }
+                    ],
+                    order: {
+                        createdAt: "DESC"
+                    }
+                })
+            }
+        } catch (error) {
+           throw error 
+        }
+    }
 }
