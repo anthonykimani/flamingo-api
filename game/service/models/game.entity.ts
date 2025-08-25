@@ -37,5 +37,5 @@ export class Game extends BaseEntity {
         onUpdate: "CASCADE",
         onDelete: "CASCADE"
     })
-    gamePlayers: Player[]
+    gamePlayers: Player[];
 }

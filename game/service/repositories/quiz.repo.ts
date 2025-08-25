@@ -66,6 +66,8 @@ export class QuizRepository {
                     }
                 })
             }
+
+            return quizData && quizData.length > 0 ? quizData[0] : null;
         } catch (error) {
             throw error
         }
