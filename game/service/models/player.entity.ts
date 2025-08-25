@@ -35,6 +35,9 @@ import { Game } from './game.entity';
   
     @Column({ type: 'bool', default: false })
     isWinner: boolean;
+
+    @Column({ type: 'bool', default: true })
+    isActive: boolean;
   
     @CreateDateColumn()
     joinedAt: Date;
