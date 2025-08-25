@@ -34,7 +34,7 @@ export class PlayerRepository {
             return playerData;
         } catch (error: any) {
             if (error instanceof Error) {
-                throw error.message;
+                throw error;
             } else {
                 throw error;
             }
@@ -83,7 +83,7 @@ export class PlayerRepository {
             return playerData;
         } catch (error) {
             if (error instanceof Error) {
-                throw error.message;
+                throw error;
             } else {
                 throw error;
             }
@@ -107,7 +107,7 @@ export class PlayerRepository {
             return playerData && playerData.length > 0 ? playerData[0] : null;
         } catch (error) {
             if (error instanceof Error) {
-                throw error.message;
+                throw error;
             } else {
                 throw error;
             }

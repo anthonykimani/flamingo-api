@@ -35,7 +35,7 @@ export class GameRepository {
             return gameData;
         } catch (error) {
             if (error instanceof Error) {
-                throw error.message;
+                throw error;
             } else {
                 throw error;
             }
@@ -77,9 +77,11 @@ export class GameRepository {
                     }
                 })
             }
+
+            return gameData;
         } catch (error) {
             if (error instanceof Error) {
-                throw error.message;
+                throw error;
             } else {
                 throw error;
             }
@@ -103,7 +105,7 @@ export class GameRepository {
             return gameData && gameData.length > 0 ? gameData[0] : null;
         } catch (error) {
             if (error instanceof Error) {
-                throw error.message;
+                throw error;
             } else {
                 throw error;
             }
