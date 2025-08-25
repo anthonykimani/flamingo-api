@@ -61,4 +61,24 @@ export class QuestionRepository {
            throw error 
         }
     }
+
+    /**
+     * Get a Question by Id
+     * @param id Id
+     * @returns Question
+     */
+    async getQuestionById(id: string): Promise<Question | null> {
+        try {
+            if(!id) return null;
+
+            let questionData = await this.repo.find({
+                where: [{ id:id }],
+                take: 1
+            })
+
+            return questionData && questionData.length > 0 ? questionData[0] : null;
+        } catch (error) {
+            throw error
+        }
+    }
 }
