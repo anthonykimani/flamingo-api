@@ -57,6 +57,8 @@ export class QuestionRepository {
                     }
                 })
             }
+
+            return questionData;
         } catch (error) {
            throw error 
         }
