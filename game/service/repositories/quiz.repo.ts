@@ -71,4 +71,24 @@ export class QuizRepository {
         }
     }
 
+    /**
+     * Get Quiz by id
+     * @param id Id
+     * @returns Quiz
+     */
+    async getQuizById(id: string): Promise<Quiz | null> {
+        try {
+            if (!id) return null;
+
+            let quizData = await this.repo.find({
+                where: [{ id:id }],
+                take: 1
+            })
+
+            return quizData && quizData.length > 0 ? quizData[0] : null;
+        } catch (error) {
+            throw error;
+        }
+    }
+
 }
