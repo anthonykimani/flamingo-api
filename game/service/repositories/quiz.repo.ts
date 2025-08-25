@@ -34,4 +34,41 @@ export class QuizRepository {
         }
     }
 
+    /**
+     * Get all quizzes
+     * @param quiz Quiz
+     * @returns Quiz
+     */
+    async getAllQuizzes(
+        quiz?: Quiz,
+        skip?: number,
+        take?: number
+    ) {
+        try {
+            let quizData: Quiz[] = [];
+
+            if(!quizData || Object.keys(quizData).length === 0) {
+                quizData = await this.repo.find({
+                    where: {
+                        isPublished: true
+                    }
+                })
+            } else {
+                quizData = await this.repo.find({
+                    where: [
+                        { id: quiz?.id },
+                        { title: quiz?.title },
+                        { description: quiz?.description },
+                        { isPublished: quiz?.isPublished }
+                    ],
+                    order: {
+                        createdAt: "DESC"
+                    }
+                })
+            }
+        } catch (error) {
+            throw error
+        }
+    }
+
 }
