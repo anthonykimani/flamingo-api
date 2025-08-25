@@ -1,5 +1,4 @@
-import { BaseEntity, Column, Entity, OneToMany, PrimaryGeneratedColumn } from "typeorm";
-import { IQuestion, QUESTION } from "../interfaces/IQuiz";
+import { BaseEntity, Column, CreateDateColumn, Entity, OneToMany, PrimaryGeneratedColumn, UpdateDateColumn } from "typeorm";
 import { Question } from "./question.entity";
 import { Game } from "./game.entity";
 
@@ -29,4 +28,10 @@ export class Quiz extends BaseEntity {
         onDelete: "CASCADE"
     })
     games: Game[];
+
+    @CreateDateColumn()
+    createdAt: Date;
+
+    @UpdateDateColumn()
+    updatedAt: Date;
 }

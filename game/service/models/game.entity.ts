@@ -9,7 +9,7 @@ export class Game extends BaseEntity {
     id: string;
 
     @ManyToOne(() => Quiz, (quiz: Quiz) => quiz.games)
-    quiz: string;
+    quiz: Quiz;
 
     @Column({ length: 100, nullable: false })
     gameTitle: string;

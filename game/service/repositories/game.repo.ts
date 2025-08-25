@@ -91,7 +91,7 @@ export class GameRepository {
     /**
      * Get a Game by Id
      * @param id
-     * @return Game
+     * @returns Game
      */
     async getGameById(id: string): Promise<Game | null> {
         try {
