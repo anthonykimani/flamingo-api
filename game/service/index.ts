@@ -4,6 +4,7 @@ import dotenv from "dotenv";
 import cors from "cors";
 import corsOptions from "./configs/corsconfig";
 import AppDataSource from "./configs/ormconfig";
+import gameRoutes from "./routes/index.games"
 
 
 export const app = express();
@@ -14,6 +15,7 @@ app.disable("x-powered-by");
 app.enable("trust proxy");
 app.use(cors(corsOptions));
 app.use(express.json());
+app.use("/games", gameRoutes)
 
 AppDataSource.initialize()
   .then(() => {

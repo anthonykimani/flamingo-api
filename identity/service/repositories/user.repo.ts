@@ -85,7 +85,7 @@ export class UserRepository {
       return userData;
     } catch (error: any) {
       if (error instanceof Error) {
-        throw error.message;
+        throw error;
       } else {
         throw error;
       }
@@ -130,7 +130,7 @@ export class UserRepository {
       return userData;
     } catch (error) {
       if (error instanceof Error) {
-        throw error.message;
+        throw error;
       } else {
         throw error;
       }
@@ -153,7 +153,7 @@ export class UserRepository {
       return userData && userData.length > 0 ? userData[0] : null;
     } catch (error) {
       if (error instanceof Error) {
-        throw error.message;
+        throw error;
       } else {
         throw error;
       }
@@ -174,7 +174,7 @@ export class UserRepository {
       return await bcrypt.hash(password, salt);
     } catch (error) {
       if (error instanceof Error) {
-        throw error.message;
+        throw error;
       } else {
         throw error;
       }

@@ -1,6 +1,11 @@
 import dotenv from "dotenv";
 import { join } from "path";
 import { DataSource } from "typeorm";
+import { Game } from "../models/game.entity";
+import { Player } from "../models/player.entity";
+import { Quiz } from "../models/quiz.entity";
+import { Question } from "../models/question.entity";
+import { Answer } from "../models/answer.entity";
 
 dotenv.config({ path: `.env.${process.env.NODE_ENV}` });
 
@@ -27,7 +32,11 @@ const AppDataSource = new DataSource({
         //cert: "",
     } : config.ssl,
     entities: [
-
+        Game,
+        Quiz,
+        Player,
+        Question,
+        Answer
     ],
     synchronize: true,
     dropSchema: false,

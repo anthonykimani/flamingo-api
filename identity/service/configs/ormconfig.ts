@@ -1,6 +1,7 @@
 import dotenv from "dotenv";
 import { join } from "path";
 import { DataSource } from "typeorm";
+import { User } from "../models/user.entity";
 
 dotenv.config({ path: `.env.${process.env.NODE_ENV}` });
 
@@ -27,7 +28,7 @@ const AppDataSource = new DataSource({
         //cert: "",
     } : config.ssl,
     entities: [
-
+        User
     ],
     synchronize: true,
     dropSchema: false,
