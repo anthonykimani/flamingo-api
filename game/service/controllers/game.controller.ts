@@ -3,6 +3,7 @@ import { GameState } from "../enums/GameState";
 import { Game } from "../models/game.entity";
 import { Quiz } from "../models/quiz.entity";
 import { GameRepository } from "../repositories/game.repo";
+import { PlayerRepository } from "../repositories/player.repo";
 import Controller from "./controller";
 import { Request, Response } from "express";
 
@@ -104,15 +105,22 @@ class GameController extends Controller {
      */
     public static async enterGameLobby(req: Request, res: Response) {
         try {
-            const { id } = req.body;
+            const { gameId, playerId } = req.body;
 
-            const repo: GameRepository = new GameRepository();
+            const gameRepo: GameRepository = new GameRepository();
+            const playerRepo: PlayerRepository = new PlayerRepository();
 
-            let currentGame = await repo.getGameById(id);
+            let currentGame = await gameRepo.getGameById(gameId);
+            let participant = await playerRepo.getPlayerById(playerId);
+
+            // TODO: add validations for valid currentGame and participant
             
-            if (currentGame) {
+            if (currentGame && participant) {
                 
                 currentGame.status = GameState.WAITING
+
+                currentGame.gamePlayers.push(participant)
+
                 return res.send(super.response(super._200, currentGame));
             } else {
                 return res.send(super.response(super._404, null, [super._404.message]))
