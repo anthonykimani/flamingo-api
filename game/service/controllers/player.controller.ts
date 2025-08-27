@@ -24,4 +24,28 @@ class PlayerController extends Controller {
             return res.send(super.response(super._500, null, super.ex(error)))
         }
     }
+
+    /**
+     * Get a Player by Id
+     * @param req Request
+     * @param res Respond
+     * @returns Json Object
+     */
+    public static async player(req: Request, res: Response) {
+        try {
+            const repo: PlayerRepository = new PlayerRepository();
+            const { id } = req.body;
+
+            let playerData = await repo.getPlayerById(id);
+
+            if (playerData) {
+                return res.send(super.response(super._200, playerData))
+            } else {
+                return res.send(super.response(super._404, null, [super._404.message]))
+            }
+
+        } catch (error) {
+            return res.send(super.response(super._500, null, super.ex(error)))
+        }
+    }
 }
