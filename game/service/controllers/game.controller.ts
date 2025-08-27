@@ -76,13 +76,13 @@ class GameController extends Controller {
             } = req.body
 
             const quiz = await quizRepo.findOneBy({ id: quizId });
-            
+
             if (!quiz) {
                 return res.send(super.response(super._404, null, ["Quiz not found"]));
             }
 
             let game = new Game();
-                game.quiz = quiz,
+            game.quiz = quiz,
                 game.gameTitle = gameTitle,
                 game.entryFee = entryFee,
                 game.maxPlayers = maxPlayers,
@@ -114,9 +114,9 @@ class GameController extends Controller {
             let participant = await playerRepo.getPlayerById(playerId);
 
             // TODO: add validations for valid currentGame and participant
-            
+
             if (currentGame && participant) {
-                
+
                 currentGame.status = GameState.WAITING
 
                 currentGame.gamePlayers.push(participant)
