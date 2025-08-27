@@ -1,4 +1,5 @@
 import AppDataSource from "../configs/ormconfig";
+import { GameState } from "../enums/GameState";
 import { Game } from "../models/game.entity";
 import { Quiz } from "../models/quiz.entity";
 import { GameRepository } from "../repositories/game.repo";
@@ -92,6 +93,32 @@ class GameController extends Controller {
             return res.send(super.response(super._200, gameData));
         } catch (error) {
             return res.send(super.response(super._500, null, super.ex(error)));
+        }
+    }
+
+    /**
+     * Start a GameState from CREATED to WAITING
+     * @param req Request
+     * @param res Response
+     * @returns Json Object
+     */
+    public static async enterGameLobby(req: Request, res: Response) {
+        try {
+            const { id } = req.body;
+
+            const repo: GameRepository = new GameRepository();
+
+            let currentGame = await repo.getGameById(id);
+            
+            if (currentGame) {
+                
+                currentGame.status = GameState.WAITING
+                return res.send(super.response(super._200, currentGame));
+            } else {
+                return res.send(super.response(super._404, null, [super._404.message]))
+            }
+        } catch (error) {
+            return res.send(super.response(super._500, null, super.ex(error)))
         }
     }
 }
