@@ -4,7 +4,8 @@ import GameController from "../controllers/game.controller";
 const router = express.Router();
 
 router.post("/", GameController.games);
-router.post("/addGame", GameController.add)
+router.post("/addGame", GameController.add);
+router.post("/enterGameLobby", GameController.enterGameLobby)
 
 router.get("*", function (req, res){
     res.setHeader("Content-Type", "applications/json")

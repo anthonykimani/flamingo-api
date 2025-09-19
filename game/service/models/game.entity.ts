@@ -38,4 +38,7 @@ export class Game extends BaseEntity {
         onDelete: "CASCADE"
     })
     gamePlayers: Player[];
+
+    @Column({ default: false })
+    deleted: boolean;
 }

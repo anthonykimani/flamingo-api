@@ -119,9 +119,17 @@ class GameController extends Controller {
 
                 currentGame.status = GameState.WAITING
 
-                currentGame.gamePlayers.push(participant)
+                participant.game = currentGame
+                participant.isActive = true
 
-                return res.send(super.response(super._200, currentGame));
+                await Promise.all([
+                    playerRepo.savePlayer(participant),
+                    gameRepo.saveGame(currentGame)
+                ])
+
+                const updatedGame = await gameRepo.getGameById(gameId)
+
+                return res.send(super.response(super._200, updatedGame));
             } else {
                 return res.send(super.response(super._404, null, [super._404.message]))
             }
