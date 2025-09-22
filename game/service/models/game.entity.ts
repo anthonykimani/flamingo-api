@@ -34,6 +34,7 @@ export class Game extends BaseEntity {
     updatedAt: Date;
 
     @OneToMany(() => Player, (player: Player) => player.game, {
+                cascade: true,
         onUpdate: "CASCADE",
         onDelete: "CASCADE"
     })

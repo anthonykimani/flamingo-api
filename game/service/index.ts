@@ -7,6 +7,8 @@ import AppDataSource from "./configs/ormconfig";
 import gameRoutes from "./routes/index.games"
 import quizRoutes from "./routes/index.quizzes"
 import playerRoutes from "./routes/index.players"
+import questionRoutes from "./routes/index.questions"
+import answerRoutes from "./routes/index.answers"
 
 
 export const app = express();
@@ -20,6 +22,8 @@ app.use(express.json());
 app.use("/games", gameRoutes);
 app.use("/quizzes", quizRoutes);
 app.use("/players", playerRoutes);
+app.use("/questions", questionRoutes);
+app.use("/answers", answerRoutes);
 
 AppDataSource.initialize()
   .then(() => {

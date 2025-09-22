@@ -1,5 +1,7 @@
 import { Question } from "../models/question.entity";
+import { Quiz } from "../models/quiz.entity";
 import { QuestionRepository } from "../repositories/question.repo";
+import { QuizRepository } from "../repositories/quiz.repo";
 import Controller from "./controller";
 import { Request, Response } from "express";
 
@@ -61,18 +63,33 @@ class QuestionController extends Controller {
     public static async add(req: Request, res: Response) {
         try {
             const repo: QuestionRepository = new QuestionRepository();
+            const quizRepo: QuizRepository = new QuizRepository();
 
             const {
-                quiz,
+                quizId,
                 question,
-                answer,
+                answers,
             } = req.body
+
+            if(!question) {
+                return res.send(super.response(super._400, null, ["Question Text is required"]));
+            }
+
+            if(!quizId) {
+                return res.send(super.response(super._404, null, ["QuizId is required"]));
+            }
+
+            const quizEntity: Quiz | null = await quizRepo.getQuizById(quizId);
+
+            if (!quizEntity) {
+                return res.send(super.response(super._404, null, ["Quiz not Found"]));
+            }
 
             let questionInstance = new Question();
             
-                questionInstance.quiz = quiz,
-                questionInstance.question = question,
-                questionInstance.answer = answer
+                questionInstance.quiz = quizEntity;
+                questionInstance.question = question;
+                questionInstance.answers = answers
 
             let questionData = await repo.saveQuestion(questionInstance);
 

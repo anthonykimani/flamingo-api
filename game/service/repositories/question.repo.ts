@@ -21,7 +21,7 @@ export class QuestionRepository {
             if (!question.id) {
                 question.quiz = question.quiz,
                     question.question = question.question,
-                    question.answer = question.answer,
+                    question.answers = question.answers,
                     question.createdAt = new Date()
             }
 

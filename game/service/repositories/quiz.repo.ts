@@ -51,7 +51,8 @@ export class QuizRepository {
                 quizData = await this.repo.find({
                     where: {
                         isPublished: true
-                    }
+                    },
+                    relations: ['questions', 'games']
                 })
             } else {
                 quizData = await this.repo.find({
