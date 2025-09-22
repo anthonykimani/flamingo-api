@@ -16,10 +16,11 @@ export class Question extends BaseEntity {
     question: string;
 
     @OneToMany(() => Answer, (answer) => answer.question, {
+        cascade: true,
         onUpdate: "CASCADE",
         onDelete: "CASCADE"
     })
-    answer: Answer[];
+    answers: Answer[];
 
     @CreateDateColumn()
     createdAt: Date;

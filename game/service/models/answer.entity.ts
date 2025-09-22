@@ -2,7 +2,7 @@ import { BaseEntity, Column, Entity, ManyToOne, PrimaryGeneratedColumn } from "t
 import { Question } from "./question.entity";
 
 
-@Entity("anwers")
+@Entity("answers")
 export class Answer extends BaseEntity {
     @PrimaryGeneratedColumn("uuid")
     id: string;
@@ -13,6 +13,9 @@ export class Answer extends BaseEntity {
     @Column({ type: "bool", default: false })
     correctAnswer: boolean;
 
-    @ManyToOne(() => Question, (question: Question) => question.answer)
+    @ManyToOne(() => Question, (question: Question) => question.answers)
     question: Question;
+
+    @Column({ default: false })
+    deleted: boolean;
 }
