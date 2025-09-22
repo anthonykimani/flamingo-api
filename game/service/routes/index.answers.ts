@@ -1,11 +1,10 @@
 import express from "express"
-import PlayerController from "../controllers/player.controller";
-
+import AnswerController from "../controllers/answer.controller";
 
 const router = express.Router();
 
-router.post("/", PlayerController.players)
-router.post("/createPlayer", PlayerController.add)
+router.post("/", AnswerController.answers);
+router.post("/addAnswer", AnswerController.add)
 
 router.get("*", function (req, res) {
     res.setHeader("Content-Type", "applications/json")

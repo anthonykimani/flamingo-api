@@ -1,11 +1,10 @@
 import express from "express"
-import PlayerController from "../controllers/player.controller";
-
+import QuizController from "../controllers/quiz.controller";
 
 const router = express.Router();
 
-router.post("/", PlayerController.players)
-router.post("/createPlayer", PlayerController.add)
+router.post("/", QuizController.quizzes);
+router.post("/createQuiz", QuizController.add);
 
 router.get("*", function (req, res) {
     res.setHeader("Content-Type", "applications/json")
@@ -13,4 +12,4 @@ router.get("*", function (req, res) {
     return res.json({ service: process.env.SERVICE_NAME })
 })
 
-export default router;
+export default router

@@ -18,12 +18,14 @@ export class Quiz extends BaseEntity {
     isPublished: boolean;
 
     @OneToMany(() => Question, (question) => question.quiz, {
+                cascade: true,
         onUpdate: "CASCADE",
         onDelete: "CASCADE"
     })
     questions: Question[];
 
     @OneToMany(() => Game, (game: Game) => game.quiz, {
+                cascade: true,
         onUpdate: "CASCADE",
         onDelete: "CASCADE"
     })
@@ -34,4 +36,7 @@ export class Quiz extends BaseEntity {
 
     @UpdateDateColumn()
     updatedAt: Date;
+
+    @Column({ default: false })
+    deleted: boolean;
 }

@@ -58,18 +58,18 @@ export class GameRepository {
             if (!gameData || Object.keys(gameData).length === 0) {
                 gameData = await this.repo.find({
                     where: {
-                        status: GameState.CREATED,
+                        deleted: false
                     },
+                    relations: [ 'gamePlayers', 'quiz'],
+                    order: { createdAt: 'DESC' }
                 });
             } else {
                 gameData = await this.repo.find({
                     where: [
                         { id: game?.id },
-                        { quiz: game?.quiz },
                         { gameTitle: game?.gameTitle },
-                        { entryFee: "10" },
-                        { maxPlayers: 5 },
-                        { status: GameState.CREATED },
+                        { entryFee: game?.entryFee },
+                        { maxPlayers: game?.maxPlayers },
                         { createdAt: new Date() },
                     ],
                     order: {
