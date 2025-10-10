@@ -21,7 +21,6 @@ export class QuizRepository {
         try {
             if(!quiz.id) {
                 quiz.title = quiz.title,
-                quiz.description = quiz.description,
                 quiz.isPublished = true,
                 quiz.questions = quiz.questions,
                 quiz.games = quiz.games
@@ -59,7 +58,6 @@ export class QuizRepository {
                     where: [
                         { id: quiz?.id },
                         { title: quiz?.title },
-                        { description: quiz?.description },
                         { isPublished: quiz?.isPublished }
                     ],
                     order: {
