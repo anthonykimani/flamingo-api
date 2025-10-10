@@ -15,6 +15,9 @@ export class Question extends BaseEntity {
     @Column({ type: "text", nullable: true })
     question: string;
 
+    @Column({ type: "int", nullable: true })
+    questionNumber?: number;
+
     @OneToMany(() => Answer, (answer) => answer.question, {
         cascade: true,
         onUpdate: "CASCADE",
