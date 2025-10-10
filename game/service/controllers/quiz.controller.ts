@@ -64,13 +64,13 @@ class QuizController extends Controller {
 
             const {
                 title,
-                description
+                questions
             } = req.body
 
             let questionInstance = new Quiz();
             
                 questionInstance.title = title,
-                questionInstance.description = description
+                questionInstance.questions = questions
 
             let questionData = await repo.saveQuiz(questionInstance);
 

@@ -11,21 +11,18 @@ export class Quiz extends BaseEntity {
     @Column({ length: 100, nullable: false })
     title: string;
 
-    @Column({ length: 100, nullable: false })
-    description: string;
-
     @Column({ type: 'boolean', default: false })
     isPublished: boolean;
 
     @OneToMany(() => Question, (question) => question.quiz, {
-                cascade: true,
+        cascade: true,
         onUpdate: "CASCADE",
         onDelete: "CASCADE"
     })
     questions: Question[];
 
     @OneToMany(() => Game, (game: Game) => game.quiz, {
-                cascade: true,
+        cascade: true,
         onUpdate: "CASCADE",
         onDelete: "CASCADE"
     })
