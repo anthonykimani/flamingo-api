@@ -53,6 +53,7 @@ export class QuestionRepository {
                         { quiz: question?.quiz },
                         { question: question?.question }
                     ],
+                    relations: ['answers', 'quiz'],
                     order: {
                         createdAt: "DESC"
                     }

@@ -36,7 +36,7 @@ class QuizController extends Controller {
     public static async quiz(req: Request, res: Response) {
         try {
             const repo: QuizRepository = new QuizRepository();
-            let { id } = req.body;
+            let { id } = req.params;
 
             let questionData = await repo.getQuizById(id);
 

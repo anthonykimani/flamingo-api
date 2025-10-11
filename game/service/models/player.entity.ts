@@ -1,44 +1,40 @@
-import {
-    Entity,
-    PrimaryGeneratedColumn,
-    Column,
-    ManyToOne,
-    JoinColumn,
-    CreateDateColumn,
-    BaseEntity,
-  } from 'typeorm';
-import { Game } from './game.entity';
+import { BaseEntity, Column, CreateDateColumn, Entity, ManyToOne, PrimaryGeneratedColumn, UpdateDateColumn } from "typeorm";
+import { Game } from "./game.entity";
 
-  @Entity('players')
-  export class Player extends BaseEntity {
-    @PrimaryGeneratedColumn('uuid')
+@Entity("players")
+export class Player extends BaseEntity {
+    @PrimaryGeneratedColumn("uuid")
     id: string;
 
-    @Column()
-    address: string;  
+    @Column({ length: 100 })
+    playerName: string;
 
-    @Column({ nullable: true })
-    userId?: string; 
-  
-    @ManyToOne(() => Game, (game: Game) => game.gamePlayers)
-    @JoinColumn({ name: 'gameId' })
-    game: Game;
-  
-    @Column({ type: 'uuid' })
-    gameId: string;
-  
-    @Column({ type: 'jsonb', nullable: true })
-    answers: Record<string, string>; // questionId → answerId
-  
-    @Column({ type: 'int', nullable: true })
-    score?: number;
-  
-    @Column({ type: 'bool', default: false })
-    isWinner: boolean;
+    @ManyToOne(() => Game, {
+        onDelete: "CASCADE"
+    })
+    gameSession: Game;
 
-    @Column({ type: 'bool', default: true })
-    isActive: boolean;
-  
+    @Column({ type: 'int', default: 0 })
+    totalScore: number;
+
+    @Column({ type: 'int', default: 0 })
+    correctAnswers: number;
+
+    @Column({ type: 'int', default: 0 })
+    wrongAnswers: number;
+
+    @Column({ type: 'int', default: 0 })
+    currentStreak: number;
+
+    @Column({ type: 'int', default: 0 })
+    bestStreak: number;
+
     @CreateDateColumn()
     joinedAt: Date;
-  }
+
+    @UpdateDateColumn()
+    updatedAt: Date;
+
+    @Column({ default: false })
+    deleted: boolean;
+}

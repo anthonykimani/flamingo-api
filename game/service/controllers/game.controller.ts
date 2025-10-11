@@ -3,138 +3,430 @@ import { GameState } from "../enums/GameState";
 import { Game } from "../models/game.entity";
 import { Quiz } from "../models/quiz.entity";
 import { GameRepository } from "../repositories/game.repo";
+import { PlayerAnswerRepository } from "../repositories/player-answer.repo";
 import { PlayerRepository } from "../repositories/player.repo";
 import Controller from "./controller";
 import { Request, Response } from "express";
 
-
 class GameController extends Controller {
     /**
-     * Get Game List
+     * Create Game Session
      * @param req Request
      * @param res Response
      * @returns Json Object
      */
-    public static async games(req: Request, res: Response) {
+    public static async createSession(req: Request, res: Response) {
         try {
-            const repo: GameRepository = new GameRepository();
-            let gameData = await repo.getAllGames(req.body);
+            const repo = new GameRepository();
+            const { quizId } = req.body;
 
-            if (gameData) {
-                return res.send(super.response(super._200, gameData))
-            } else {
-                return res.send(super.response(super._404, gameData, [super._404.message]))
+            if (!quizId) {
+                return res.send(super.response(super._400, null, ['Quiz ID is required']));
             }
 
-        } catch (error) {
-            return res.send(super.response(super._500, null, super.ex(error)))
-        }
-    }
+            const session = await repo.createSession(quizId);
 
-    /**
-     * Get Game by Id
-     * @param req Request
-     * @param res Response
-     * @returns Json Object
-     */
-    public static async game(req: Request, res: Response) {
-        try {
-            const repo: GameRepository = new GameRepository();
-            let { id } = req.body;
-
-            let gameData = await repo.getGameById(id);
-
-            if (gameData) {
-                return res.send(super.response(super._200, gameData))
-            } else {
-                return res.send(super.response(super._404, gameData, [super._404.message]))
-            }
-
-        } catch (error) {
-            return res.send(super.response(super._500, null, super.ex(error)))
-        }
-    }
-
-
-    /**
-     * Add Game
-     * @param req Request
-     * @param res Response
-     * @returns Json Object
-     */
-    public static async add(req: Request, res: Response) {
-        try {
-            const repo: GameRepository = new GameRepository();
-            const quizRepo = AppDataSource.getRepository(Quiz);
-
-            const {
-                quizId,
-                gameTitle,
-                entryFee,
-                maxPlayers,
-                status,
-            } = req.body
-
-            const quiz = await quizRepo.findOneBy({ id: quizId });
-
-            if (!quiz) {
-                return res.send(super.response(super._404, null, ["Quiz not found"]));
-            }
-
-            let game = new Game();
-            game.quiz = quiz,
-                game.gameTitle = gameTitle,
-                game.entryFee = entryFee,
-                game.maxPlayers = maxPlayers,
-                game.status = status,
-                game.gamePlayers = [];
-
-            let gameData = await repo.saveGame(game);
-
-            return res.send(super.response(super._200, gameData));
+            return res.send(super.response(super._200, session));
         } catch (error) {
             return res.send(super.response(super._500, null, super.ex(error)));
         }
     }
 
     /**
-     * Start a GameState from CREATED to WAITING
+     * Get Game Session by ID
      * @param req Request
      * @param res Response
      * @returns Json Object
      */
-    public static async enterGameLobby(req: Request, res: Response) {
+    public static async getSession(req: Request, res: Response) {
         try {
-            const { gameId, playerId } = req.body;
+            const repo = new GameRepository();
+            const { gameSessionId } = req.params;
 
-            const gameRepo: GameRepository = new GameRepository();
-            const playerRepo: PlayerRepository = new PlayerRepository();
-
-            let currentGame = await gameRepo.getGameById(gameId);
-            let participant = await playerRepo.getPlayerById(playerId);
-
-            // TODO: add validations for valid currentGame and participant
-
-            if (currentGame && participant) {
-
-                currentGame.status = GameState.WAITING
-
-                participant.game = currentGame
-                participant.isActive = true
-
-                await Promise.all([
-                    playerRepo.savePlayer(participant),
-                    gameRepo.saveGame(currentGame)
-                ])
-
-                const updatedGame = await gameRepo.getGameById(gameId)
-
-                return res.send(super.response(super._200, updatedGame));
-            } else {
-                return res.send(super.response(super._404, null, [super._404.message]))
+            if (!gameSessionId) {
+                return res.send(super.response(super._400, null, ['Game session ID is required']));
             }
+
+            const session = await repo.getSessionById(gameSessionId);
+
+            if (!session) {
+                return res.send(super.response(super._404, null, ['Game session not found']));
+            }
+
+            return res.send(super.response(super._200, session));
         } catch (error) {
-            return res.send(super.response(super._500, null, super.ex(error)))
+            return res.send(super.response(super._500, null, super.ex(error)));
+        }
+    }
+
+    /**
+     * Join Game by PIN
+     * @param req Request
+     * @param res Response
+     * @returns Json Object
+     */
+    public static async joinGame(req: Request, res: Response) {
+        try {
+            const repo = new GameRepository();
+            const { gamePin } = req.body;
+
+            if (!gamePin) {
+                return res.send(super.response(super._400, null, ['Game PIN is required']));
+            }
+
+            const session = await repo.getSessionByPin(gamePin);
+
+            if (!session) {
+                return res.send(super.response(super._404, null, ['Game not found']));
+            }
+
+            if (!session.isActive) {
+                return res.send(super.response(super._400, null, ['Game is no longer active']));
+            }
+
+            return res.send(super.response(super._200, session));
+        } catch (error) {
+            return res.send(super.response(super._500, null, super.ex(error)));
+        }
+    }
+
+    /**
+     * Start Game Session
+     * @param req Request
+     * @param res Response
+     * @returns Json Object
+     */
+    public static async startGame(req: Request, res: Response) {
+        try {
+            const repo = new GameRepository();
+            const { gameSessionId } = req.params;
+            const { gameState } = req.body;
+
+            if (!gameSessionId) {
+                return res.send(super.response(super._400, null, ['Game session ID is required']));
+            }
+
+            if( !gameState) {
+                return res.send(super.response(super._400, null, ['Game state is required']))
+            }
+
+            const session = await repo.startSession(gameSessionId);
+
+            if (!session) {
+                return res.send(super.response(super._404, null, ['Game session not found']));
+            }
+
+            return res.send(super.response(super._200, session));
+        } catch (error) {
+            return res.send(super.response(super._500, null, super.ex(error)));
+        }
+    }
+
+    /**
+     * Submit Player Answer
+     * @param req Request
+     * @param res Response
+     * @returns Json Object
+     */
+    public static async submitAnswer(req: Request, res: Response) {
+        try {
+            const answerRepo = new PlayerAnswerRepository();
+            const playerRepo = new PlayerRepository();
+
+            const {
+                gameSessionId,
+                playerName,
+                questionId,
+                answerId,
+                isCorrect,
+                pointsEarned,
+                answerStreak,
+                timeToAnswer
+            } = req.body;
+
+            // Validate required fields
+            if (!gameSessionId || !playerName || !questionId || !answerId) {
+                return res.send(super.response(super._400, null, ['Missing required fields']));
+            }
+
+            // Check if player already answered this question
+            const existingAnswer = await answerRepo.getPlayerAnswerForQuestion(
+                gameSessionId,
+                playerName,
+                questionId
+            );
+
+            if (existingAnswer) {
+                return res.send(super.response(super._400, null, ['You have already answered this question']));
+            }
+
+            // Save player answer
+            const playerAnswer = await answerRepo.saveAnswer({
+                gameSession: { id: gameSessionId } as any,
+                playerName,
+                question: { id: questionId } as any,
+                selectedAnswer: { id: answerId } as any,
+                isCorrect,
+                pointsEarned: pointsEarned || 0,
+                answerStreak: answerStreak || 0,
+                timeToAnswer: timeToAnswer || 0
+            });
+
+            // Update player stats
+            const playerAnswers = await answerRepo.getPlayerAnswers(gameSessionId, playerName);
+
+            const totalScore = playerAnswers.reduce((sum, ans) => sum + (ans.pointsEarned || 0), 0);
+            const correctAnswers = playerAnswers.filter(ans => ans.isCorrect).length;
+            const wrongAnswers = playerAnswers.filter(ans => !ans.isCorrect).length;
+            const bestStreak = Math.max(...playerAnswers.map(ans => ans.answerStreak || 0), 0);
+
+            const updatedPlayer = await playerRepo.updatePlayerStats({
+                gameSessionId,
+                playerName,
+                totalScore,
+                correctAnswers,
+                wrongAnswers,
+                currentStreak: answerStreak || 0,
+                bestStreak
+            });
+
+            return res.send(super.response(super._200, {
+                answer: playerAnswer,
+                player: updatedPlayer
+            }));
+        } catch (error) {
+            return res.send(super.response(super._500, null, super.ex(error)));
+        }
+    }
+
+    /**
+     * Get Leaderboard
+     * @param req Request
+     * @param res Response
+     * @returns Json Object
+     */
+    public static async getLeaderboard(req: Request, res: Response) {
+        try {
+            const repo = new PlayerRepository();
+            const { gameSessionId } = req.params;
+
+            if (!gameSessionId) {
+                return res.send(super.response(super._400, null, ['Game session ID is required']));
+            }
+
+            const leaderboard = await repo.getLeaderboard(gameSessionId);
+
+            return res.send(super.response(super._200, leaderboard));
+        } catch (error) {
+            return res.send(super.response(super._500, null, super.ex(error)));
+        }
+    }
+
+    /**
+     * Get Player Stats
+     * @param req Request
+     * @param res Response
+     * @returns Json Object
+     */
+    public static async getPlayerStats(req: Request, res: Response) {
+        try {
+            const repo = new PlayerRepository();
+            const { gameSessionId, playerName } = req.params;
+
+            if (!gameSessionId || !playerName) {
+                return res.send(super.response(super._400, null, ['Missing required parameters']));
+            }
+
+            const stats = await repo.getPlayerStats(gameSessionId, playerName);
+
+            if (!stats) {
+                return res.send(super.response(super._404, null, ['Player not found']));
+            }
+
+            return res.send(super.response(super._200, stats));
+        } catch (error) {
+            return res.send(super.response(super._500, null, super.ex(error)));
+        }
+    }
+
+    /**
+     * Get All Active Players in Game Session
+     * @param req Request
+     * @param res Response
+     * @returns Json Object
+     */
+    public static async getActivePlayers(req: Request, res: Response) {
+        try {
+            const repo = new PlayerRepository();
+            const { gameSessionId } = req.params;
+
+            if (!gameSessionId) {
+                return res.send(super.response(super._400, null, ['Game session ID is required']));
+            }
+
+            const players = await repo.getSessionPlayers(gameSessionId);
+
+            return res.send(super.response(super._200, players));
+        } catch (error) {
+            return res.send(super.response(super._500, null, super.ex(error)));
+        }
+    }
+
+    /**
+     * Get Question Statistics (how many players answered)
+     * @param req Request
+     * @param res Response
+     * @returns Json Object
+     */
+    public static async getQuestionStats(req: Request, res: Response) {
+        try {
+            const answerRepo = new PlayerAnswerRepository();
+            const { gameSessionId, questionId } = req.params;
+
+            if (!gameSessionId || !questionId) {
+                return res.send(super.response(super._400, null, ['Missing required parameters']));
+            }
+
+            const answers = await answerRepo.getQuestionAnswers(gameSessionId, questionId);
+            
+            const totalAnswers = answers.length;
+            const correctCount = answers.filter(ans => ans.isCorrect).length;
+            const wrongCount = answers.filter(ans => !ans.isCorrect).length;
+            
+            // Group by selected answer
+            const answerBreakdown = answers.reduce((acc, ans) => {
+                const answerId = ans.selectedAnswer.id;
+                if (!acc[answerId]) {
+                    acc[answerId] = {
+                        answerId,
+                        answerText: ans.selectedAnswer.answer,
+                        count: 0,
+                        isCorrect: ans.selectedAnswer.correctAnswer
+                    };
+                }
+                acc[answerId].count++;
+                return acc;
+            }, {} as any);
+
+            const stats = {
+                totalAnswers,
+                correctCount,
+                wrongCount,
+                correctPercentage: totalAnswers > 0 ? (correctCount / totalAnswers) * 100 : 0,
+                answerBreakdown: Object.values(answerBreakdown)
+            };
+
+            return res.send(super.response(super._200, stats));
+        } catch (error) {
+            return res.send(super.response(super._500, null, super.ex(error)));
+        }
+    }
+
+    /**
+     * Get Game Session Summary
+     * @param req Request
+     * @param res Response
+     * @returns Json Object
+     */
+    public static async getSessionSummary(req: Request, res: Response) {
+        try {
+            const gameRepo = new GameRepository();
+            const playerRepo = new PlayerRepository();
+            const answerRepo = new PlayerAnswerRepository();
+            const { gameSessionId } = req.params;
+
+            if (!gameSessionId) {
+                return res.send(super.response(super._400, null, ['Game session ID is required']));
+            }
+
+            const session = await gameRepo.getSessionById(gameSessionId);
+            if (!session) {
+                return res.send(super.response(super._404, null, ['Game session not found']));
+            }
+
+            const players = await playerRepo.getSessionPlayers(gameSessionId);
+            const leaderboard = await playerRepo.getLeaderboard(gameSessionId);
+            const allAnswers = await answerRepo.getSessionAnswers(gameSessionId);
+
+            const summary = {
+                session: {
+                    id: session.id,
+                    gamePin: session.gamePin,
+                    quizTitle: session.quiz?.title,
+                    isActive: session.isActive,
+                    startedAt: session.startedAt,
+                    endedAt: session.endedAt
+                },
+                stats: {
+                    totalPlayers: players.length,
+                    totalAnswers: allAnswers.length,
+                    averageScore: players.length > 0 
+                        ? players.reduce((sum, p) => sum + p.totalScore, 0) / players.length 
+                        : 0,
+                    correctAnswersTotal: allAnswers.filter(ans => ans.isCorrect).length,
+                    wrongAnswersTotal: allAnswers.filter(ans => !ans.isCorrect).length
+                },
+                topPlayers: leaderboard.slice(0, 3),
+                allPlayers: leaderboard
+            };
+
+            return res.send(super.response(super._200, summary));
+        } catch (error) {
+            return res.send(super.response(super._500, null, super.ex(error)));
+        }
+    }
+
+    /**
+     * End Game Session
+     * @param req Request
+     * @param res Response
+     * @returns Json Object
+     */
+    public static async endSession(req: Request, res: Response) {
+        try {
+            const repo = new GameRepository();
+            const { gameSessionId } = req.params;
+
+            if (!gameSessionId) {
+                return res.send(super.response(super._400, null, ['Game session ID is required']));
+            }
+
+            const session = await repo.endSession(gameSessionId);
+
+            if (!session) {
+                return res.send(super.response(super._404, null, ['Game session not found']));
+            }
+
+            return res.send(super.response(super._200, session));
+        } catch (error) {
+            return res.send(super.response(super._500, null, super.ex(error)));
+        }
+    }
+
+    /**
+     * Delete Game Session
+     * @param req Request
+     * @param res Response
+     * @returns Json Object
+     */
+    public static async deleteSession(req: Request, res: Response) {
+        try {
+            const repo = new GameRepository();
+            const { gameSessionId } = req.params;
+
+            if (!gameSessionId) {
+                return res.send(super.response(super._400, null, ['Game session ID is required']));
+            }
+
+            const deleted = await repo.deleteSession(gameSessionId);
+
+            if (!deleted) {
+                return res.send(super.response(super._404, null, ['Game session not found']));
+            }
+
+            return res.send(super.response(super._200, { message: 'Game session deleted successfully' }));
+        } catch (error) {
+            return res.send(super.response(super._500, null, super.ex(error)));
         }
     }
 }
