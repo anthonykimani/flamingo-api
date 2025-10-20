@@ -59,6 +59,34 @@ class GameController extends Controller {
         }
     }
 
+
+    /**
+     * Get Game Session by GamePin
+     * @param req Request
+     * @param res Response
+     * @returns Json Object
+     */
+    public static async getSessionByGamePin(req: Request, res: Response) {
+        try {
+            const repo = new GameRepository();
+            const { gamePinId } = req.params;
+
+            if (!gamePinId) {
+                return res.send(super.response(super._400, null, ["Game Pin not found"]))
+            }
+
+            const gameSession = await repo.getSessionByPin(gamePinId);
+
+            if (!gameSession) {
+                return res.send(super.response(super._404, null, ['Game session not found']))
+            }
+
+            return res.send(super.response(super._200, gameSession));
+        } catch (error) {
+            return res.send(super.response(super._500, null, super.ex(error)));
+        }
+    }
+
     /**
      * Join Game by PIN
      * @param req Request
@@ -106,7 +134,7 @@ class GameController extends Controller {
                 return res.send(super.response(super._400, null, ['Game session ID is required']));
             }
 
-            if( !gameState) {
+            if (!gameState) {
                 return res.send(super.response(super._400, null, ['Game state is required']))
             }
 
@@ -288,11 +316,11 @@ class GameController extends Controller {
             }
 
             const answers = await answerRepo.getQuestionAnswers(gameSessionId, questionId);
-            
+
             const totalAnswers = answers.length;
             const correctCount = answers.filter(ans => ans.isCorrect).length;
             const wrongCount = answers.filter(ans => !ans.isCorrect).length;
-            
+
             // Group by selected answer
             const answerBreakdown = answers.reduce((acc, ans) => {
                 const answerId = ans.selectedAnswer.id;
@@ -360,8 +388,8 @@ class GameController extends Controller {
                 stats: {
                     totalPlayers: players.length,
                     totalAnswers: allAnswers.length,
-                    averageScore: players.length > 0 
-                        ? players.reduce((sum, p) => sum + p.totalScore, 0) / players.length 
+                    averageScore: players.length > 0
+                        ? players.reduce((sum, p) => sum + p.totalScore, 0) / players.length
                         : 0,
                     correctAnswersTotal: allAnswers.filter(ans => ans.isCorrect).length,
                     wrongAnswersTotal: allAnswers.filter(ans => !ans.isCorrect).length

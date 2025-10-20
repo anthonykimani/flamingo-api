@@ -26,7 +26,7 @@ export class GameRepository {
         try {
             return await this.repo.findOne({
                 where: { gamePin, deleted: false },
-                relations: ['quiz', 'quiz.questions', 'quiz.questions.answers']
+                relations: ['quiz']
             });
         } catch (error) {
             throw error;
