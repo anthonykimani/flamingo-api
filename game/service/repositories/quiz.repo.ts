@@ -83,6 +83,7 @@ export class QuizRepository {
 
             let quizData = await this.repo.find({
                 where: [{ id:id }],
+                relations: ['questions', 'games', 'questions.answers'],
                 take: 1
             })
 

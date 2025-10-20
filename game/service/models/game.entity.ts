@@ -1,5 +1,5 @@
 import { BaseEntity, Column, CreateDateColumn, Entity, Index, ManyToOne, OneToMany, PrimaryGeneratedColumn, UpdateDateColumn } from "typeorm";
-import { Player } from "./player.entity";
+import { PlayerAnswer } from "./player-answer.entity";
 import { GameState } from "../enums/GameState";
 import { Quiz } from "./quiz.entity";
 
@@ -8,16 +8,19 @@ export class Game extends BaseEntity {
     @PrimaryGeneratedColumn("uuid")
     id: string;
 
+    @Column({ length: 10, unique: true })
+    gamePin: string;
+
     @ManyToOne(() => Quiz, (quiz: Quiz) => quiz.games)
     quiz: Quiz;
 
-    @Column({ length: 100, nullable: false })
+    @Column({ length: 100, nullable: true })
     gameTitle: string;
 
-    @Column({ type: 'decimal', precision: 12, scale: 2 })
+    @Column({ type: 'decimal', precision: 12, scale: 2, nullable: true })
     entryFee: string;
 
-    @Column()
+    @Column({ nullable: true })
     maxPlayers: number;
 
     @Column({
@@ -27,18 +30,27 @@ export class Game extends BaseEntity {
     })
     status: GameState;
 
+    @Column({ type: 'boolean', default: true })
+    isActive: boolean;
+
+    @Column({ type: 'timestamp', nullable: true })
+    startedAt: Date;
+
+    @Column({ type: 'timestamp', nullable: true })
+    endedAt: Date;
+
+    @OneToMany(() => PlayerAnswer, (answer) => answer.gameSession, {
+        cascade: true,
+        onDelete: "CASCADE"
+    })
+    playerAnswers: PlayerAnswer[];
+
     @CreateDateColumn()
     createdAt: Date;
 
     @UpdateDateColumn()
     updatedAt: Date;
 
-    @OneToMany(() => Player, (player: Player) => player.game, {
-                cascade: true,
-        onUpdate: "CASCADE",
-        onDelete: "CASCADE"
-    })
-    gamePlayers: Player[];
 
     @Column({ default: false })
     deleted: boolean;

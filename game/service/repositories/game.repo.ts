@@ -1,114 +1,106 @@
-import { Repository } from "typeorm";
 import AppDataSource from "../configs/ormconfig";
-import { Game } from "../models/game.entity";
 import { GameState } from "../enums/GameState";
-import dotenv from "dotenv";
-
+import { Game } from "../models/game.entity";
 
 export class GameRepository {
-    private repo: Repository<Game>;
+    private repo = AppDataSource.getRepository(Game);
 
-    constructor() {
-        this.repo = AppDataSource.getRepository(Game)
-        dotenv.config({ path: `.env.${process.env.NODE_ENV}` });
-    }
-
-    /**
-     * Save Game
-     * @param game Game Data
-     * @returns Game
-     */
-    async saveGame(game: Game): Promise<Game | null> {
+    async createSession(quizId: string): Promise<Game> {
         try {
-            if (!game.id) {
-                game.quiz = game.quiz,
-                    game.gameTitle = game.gameTitle,
-                    game.entryFee = game.entryFee,
-                    game.maxPlayers = game.maxPlayers,
-                    game.status = GameState.CREATED,
-                    game.createdAt = new Date(),
-                    game.gamePlayers = []
-            }
+            const gamePin = this.generateGamePin();
 
-            let gameData = await this.repo.save(game);
-
-            return gameData;
-        } catch (error) {
-            if (error instanceof Error) {
-                throw error;
-            } else {
-                throw error;
-            }
-        }
-    }
-
-    /**
-     * Get all Game
-     * @param game Game Data
-     * @returns Game
-     */
-    async getAllGames(
-        game?: Game,
-        skip?: number,
-        take?: number
-    ) {
-        try {
-            let gameData: Game[] = [];
-
-            if (!gameData || Object.keys(gameData).length === 0) {
-                gameData = await this.repo.find({
-                    where: {
-                        deleted: false
-                    },
-                    relations: [ 'gamePlayers', 'quiz'],
-                    order: { createdAt: 'DESC' }
-                });
-            } else {
-                gameData = await this.repo.find({
-                    where: [
-                        { id: game?.id },
-                        { gameTitle: game?.gameTitle },
-                        { entryFee: game?.entryFee },
-                        { maxPlayers: game?.maxPlayers },
-                        { createdAt: new Date() },
-                    ],
-                    order: {
-                        createdAt: "DESC",
-                    }
-                })
-            }
-
-            return gameData;
-        } catch (error) {
-            if (error instanceof Error) {
-                throw error;
-            } else {
-                throw error;
-            }
-        }
-    }
-
-    /**
-     * Get a Game by Id
-     * @param id
-     * @returns Game
-     */
-    async getGameById(id: string): Promise<Game | null> {
-        try {
-            if (!id) return null;
-
-            let gameData = await this.repo.find({
-                where: [{ id: id }],
-                take: 1
+            const session = this.repo.create({
+                gamePin,
+                quiz: { id: quizId } as any,
+                isActive: true,
+                startedAt: new Date()
             });
 
-            return gameData && gameData.length > 0 ? gameData[0] : null;
+            return await this.repo.save(session);
         } catch (error) {
-            if (error instanceof Error) {
-                throw error;
-            } else {
-                throw error;
-            }
+            throw error;
+        }
+    }
+
+    async getSessionByPin(gamePin: string): Promise<Game | null> {
+        try {
+            return await this.repo.findOne({
+                where: { gamePin, deleted: false },
+                relations: ['quiz']
+            });
+        } catch (error) {
+            throw error;
+        }
+    }
+
+    async getSessionById(id: string): Promise<Game | null> {
+        try {
+            return await this.repo.findOne({
+                where: { id, deleted: false },
+                relations: ['quiz', 'playerAnswers']
+            });
+        } catch (error) {
+            throw error;
+        }
+    }
+
+    async endSession(id: string): Promise<Game | null> {
+        try {
+            const session = await this.repo.findOne({ where: { id } });
+            if (!session) return null;
+
+            session.isActive = false;
+            session.endedAt = new Date();
+
+            return await this.repo.save(session);
+        } catch (error) {
+            throw error;
+        }
+    }
+
+    private generateGamePin(): string {
+        return Math.floor(100000 + Math.random() * 900000).toString();
+    }
+
+    async startSession(id: string): Promise<Game | null> {
+        try {
+            const session = await this.repo.findOne({ where: { id } });
+            if (!session) return null;
+
+            session.isActive = true;
+            session.startedAt = new Date();
+            session.status = GameState.IN_PROGRESS
+
+            return await this.repo.save(session);
+        } catch (error) {
+            throw error;
+        }
+    }
+
+    async updateSession(id:string, gameState: GameState): Promise<Game | null> {
+        try {
+            const session = await this.repo.findOne({ where: { id }});
+            if(!session) return null;
+            session.updatedAt = new Date();
+            session.status = gameState
+
+            return await this.repo.save(session)
+        } catch (error) {
+            throw error;
+        }
+    }
+
+    async deleteSession(id: string): Promise<boolean> {
+        try {
+            const session = await this.repo.findOne({ where: { id } });
+            if (!session) return false;
+
+            session.deleted = true;
+            await this.repo.save(session);
+
+            return true;
+        } catch (error) {
+            throw error;
         }
     }
 }

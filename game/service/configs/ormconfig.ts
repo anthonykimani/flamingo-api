@@ -2,6 +2,7 @@ import dotenv from "dotenv";
 import { join } from "path";
 import { DataSource } from "typeorm";
 import { Game } from "../models/game.entity";
+import { PlayerAnswer } from "../models/player-answer.entity";
 import { Player } from "../models/player.entity";
 import { Quiz } from "../models/quiz.entity";
 import { Question } from "../models/question.entity";
@@ -34,6 +35,7 @@ const AppDataSource = new DataSource({
     entities: [
         Game,
         Quiz,
+        PlayerAnswer,
         Player,
         Question,
         Answer
