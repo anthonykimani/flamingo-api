@@ -5,10 +5,11 @@ const router = express.Router();
 
 // Game session management
 router.post('/create-session', GameController.createSession);
+router.post('/join', GameController.joinGame);
 router.get('/session/:gameSessionId', GameController.getSession);
 router.get('/gamepin/:gamePinId', GameController.getSessionByGamePin);
-router.post('/join', GameController.joinGame);
 router.post('/start/:gameSessionId', GameController.startGame);
+router.post('/updateGame/:gameSessionId', GameController.updateGame)
 router.post('/end/:gameSessionId', GameController.endSession);
 router.delete('/delete/:gameSessionId', GameController.deleteSession);
 

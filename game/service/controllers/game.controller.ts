@@ -151,6 +151,34 @@ class GameController extends Controller {
     }
 
     /**
+     * Update Game Session
+     * @param req Request
+     * @param res Response
+     * @returns Json Object
+     */
+    public static async updateGame(req: Request, res: Response) {
+        try {
+            const repo = new GameRepository();
+            const { gameSessionId } = req.params;
+            const { gameState } = req.body;
+
+            if (!gameSessionId) {
+                return res.send(super.response(super._400, null, ['Game session ID is required']));
+            }
+
+            if (!gameState) {
+                return res.send(super.response(super._400, null, ['Game state is required']))
+            }
+
+            const updateGameSession = await repo.updateSession(gameSessionId, gameState);
+
+            return res.send(super.response(super._200, updateGameSession));
+        } catch (error) {
+            return res.send(super.response(super._500, null, super.ex(error)))
+        }
+    }
+
+    /**
      * Submit Player Answer
      * @param req Request
      * @param res Response

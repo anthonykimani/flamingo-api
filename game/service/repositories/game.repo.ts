@@ -77,6 +77,19 @@ export class GameRepository {
         }
     }
 
+    async updateSession(id:string, gameState: GameState): Promise<Game | null> {
+        try {
+            const session = await this.repo.findOne({ where: { id }});
+            if(!session) return null;
+            session.updatedAt = new Date();
+            session.status = gameState
+
+            return await this.repo.save(session)
+        } catch (error) {
+            throw error;
+        }
+    }
+
     async deleteSession(id: string): Promise<boolean> {
         try {
             const session = await this.repo.findOne({ where: { id } });
