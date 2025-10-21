@@ -5,6 +5,7 @@ const router = express.Router();
 
 router.post("/", QuizController.quizzes);
 router.post("/createQuiz", QuizController.add);
+router.post("/createAgentQuiz", QuizController.addAgentQuiz);
 router.get("/quiz/:id", QuizController.quiz);
 
 router.get("*", function (req, res) {
