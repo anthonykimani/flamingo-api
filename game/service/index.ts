@@ -1,5 +1,6 @@
 import express from "express";
 import http from "http";
+import {Server} from "socket.io";
 import dotenv from "dotenv";
 import cors from "cors";
 import corsOptions from "./configs/corsconfig";
@@ -13,6 +14,7 @@ import answerRoutes from "./routes/index.answers"
 
 export const app = express();
 export const server = http.createServer(app);
+export const io = new Server(server)
 
 dotenv.config({ path: `.env.${process.env.NODE_ENV}` });
 app.disable("x-powered-by");
@@ -24,6 +26,13 @@ app.use("/quizzes", quizRoutes);
 app.use("/players", playerRoutes);
 app.use("/questions", questionRoutes);
 app.use("/answers", answerRoutes);
+
+io.on('connection', (socket) => {
+  console.log('a user connected');
+  socket.on('disconnect', () => {
+    console.log('user disconnected');
+  });
+});
 
 AppDataSource.initialize()
   .then(() => {
