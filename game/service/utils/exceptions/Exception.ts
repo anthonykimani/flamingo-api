@@ -1,6 +1,7 @@
+
 import { Template } from "../../enums/Template";
-import { renderExceptionContent } from "../../templates";
-import { notifyAdmin } from "../messages/Notify";
+import { renderExceptionContent } from "../templates";
+
 
 export class Exception extends Error {
   private service = process.env.SERVICE_NAME;
@@ -90,6 +91,6 @@ export class Exception extends Error {
       time: new Date(),
     });
 
-    notifyAdmin(subject, body);
+    // notifyAdmin(subject, body);
   }
 }

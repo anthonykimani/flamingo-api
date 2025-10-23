@@ -1,5 +1,6 @@
 import { BaseEntity, Column, CreateDateColumn, Entity, Index, ManyToOne, OneToMany, PrimaryGeneratedColumn, UpdateDateColumn } from "typeorm";
 import { PlayerAnswer } from "./player-answer.entity";
+import { Player } from "./player.entity";
 import { GameState } from "../enums/GameState";
 import { Quiz } from "./quiz.entity";
 
@@ -39,6 +40,12 @@ export class Game extends BaseEntity {
     @Column({ type: 'timestamp', nullable: true })
     endedAt: Date;
 
+    // FIX: Add players relation
+    @OneToMany(() => Player, (player) => player.gameSession, {
+        cascade: true
+    })
+    players: Player[];
+
     @OneToMany(() => PlayerAnswer, (answer) => answer.gameSession, {
         cascade: true,
         onDelete: "CASCADE"
@@ -50,7 +57,6 @@ export class Game extends BaseEntity {
 
     @UpdateDateColumn()
     updatedAt: Date;
-
 
     @Column({ default: false })
     deleted: boolean;

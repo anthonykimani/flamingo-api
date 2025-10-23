@@ -1,6 +1,7 @@
 import dotenv from "dotenv";
 import fs from "fs";
-import { Template } from "../enums/Template";
+import { Template } from "../../enums/Template";
+
 
 dotenv.config({ path: `.env.${process.env.NODE_ENV}` });
 

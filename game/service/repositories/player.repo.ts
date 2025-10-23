@@ -11,7 +11,6 @@ export class PlayerRepository {
         dotenv.config({ path: `.env.${process.env.NODE_ENV}` });
     }
 
-
     async getAllPlayers(filters?: any): Promise<Player[]> {
         try {
             return await this.repo.find({
