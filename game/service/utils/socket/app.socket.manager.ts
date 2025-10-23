@@ -35,14 +35,14 @@ export class SocketService {
         return SocketService.instance;
     }
 
-    initialize(httpServer: HttpServer, corsOrigin: string = "*") {
+    initialize(httpServer: HttpServer, allowedOrigins: string[]) {
         try {
             if (!this.io) {
                 this.io = new SocketServer(httpServer, {
                     cors: {
-                        origin: corsOrigin,
+                        origin: allowedOrigins,
                         methods: ["GET", "POST"],
-                        credentials: true
+                        credentials: false
                     },
                     transports: ['websocket', 'polling']
                 });
