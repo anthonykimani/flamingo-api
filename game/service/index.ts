@@ -2,7 +2,7 @@ import express from "express";
 import http from "http";
 import dotenv from "dotenv";
 import cors from "cors";
-import corsOptions from "./configs/corsconfig";
+import corsOptions, { allowedOrigins } from "./configs/corsconfig";
 import AppDataSource from "./configs/ormconfig";
 import gameRoutes from "./routes/index.games";
 import quizRoutes from "./routes/index.quizzes";
@@ -22,8 +22,7 @@ export const server = http.createServer(app);
 
 // Initialize Socket.IO service - FIX: Use getInstance()
 const socketService = SocketService.getInstance();
-const corsOrigin = process.env.CORS_ORIGIN || "*";
-export const io = socketService.initialize(server, corsOrigin);
+export const io = socketService.initialize(server, allowedOrigins);
 
 // Express middleware
 app.disable("x-powered-by");
