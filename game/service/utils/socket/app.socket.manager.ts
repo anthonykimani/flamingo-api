@@ -39,11 +39,6 @@ export class SocketService {
         try {
             if (!this.io) {
                 this.io = new SocketServer(httpServer, {
-                    cors: {
-                        origin: allowedOrigins,
-                        methods: ["GET", "POST"],
-                        credentials: false
-                    },
                     transports: ['websocket', 'polling']
                 });
 
