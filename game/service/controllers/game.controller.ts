@@ -66,7 +66,7 @@ class GameController extends Controller {
      * @param res Response
      * @returns Json Object
      */
-    public static async getSessionByGamePin(req: Request, res: Response) {
+    public static async getGameSessionByGamePin(req: Request, res: Response) {
         try {
             const repo = new GameRepository();
             const { gamePinId } = req.params;
