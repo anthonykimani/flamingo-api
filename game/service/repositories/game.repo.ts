@@ -5,7 +5,7 @@ import { Game } from "../models/game.entity";
 export class GameRepository {
     private repo = AppDataSource.getRepository(Game);
 
-    async createSession(quizId: string): Promise<Game> {
+    async createSession(quizId: string, questionDuration: number = 10): Promise<Game> {
         try {
             const gamePin = this.generateGamePin();
 
@@ -13,7 +13,11 @@ export class GameRepository {
                 gamePin,
                 quiz: { id: quizId } as any,
                 isActive: true,
-                startedAt: new Date()
+                startedAt: new Date(),
+                currentQuestionIndex: 0,
+                questionDuration: questionDuration,
+                timeLeft: questionDuration,
+                status: GameState.WAITING
             });
 
             return await this.repo.save(session);
@@ -51,6 +55,7 @@ export class GameRepository {
 
             session.isActive = false;
             session.endedAt = new Date();
+            session.status = GameState.COMPLETED;
 
             return await this.repo.save(session);
         } catch (error) {
@@ -64,12 +69,19 @@ export class GameRepository {
 
     async startSession(id: string): Promise<Game | null> {
         try {
-            const session = await this.repo.findOne({ where: { id } });
+            const session = await this.repo.findOne({ 
+                where: { id },
+                relations: ['quiz', 'quiz.questions', 'quiz.questions.answers']
+            });
+            
             if (!session) return null;
 
             session.isActive = true;
+            session.currentQuestionIndex = 0;
             session.startedAt = new Date();
-            session.status = GameState.IN_PROGRESS
+            session.questionStartedAt = new Date();
+            session.timeLeft = session.questionDuration || 10;
+            session.status = GameState.IN_PROGRESS;
 
             return await this.repo.save(session);
         } catch (error) {
@@ -77,14 +89,15 @@ export class GameRepository {
         }
     }
 
-    async updateSession(id:string, gameState: GameState): Promise<Game | null> {
+    async updateSession(id: string, gameState: GameState): Promise<Game | null> {
         try {
-            const session = await this.repo.findOne({ where: { id }});
-            if(!session) return null;
+            const session = await this.repo.findOne({ where: { id } });
+            if (!session) return null;
+            
             session.updatedAt = new Date();
-            session.status = gameState
+            session.status = gameState;
 
-            return await this.repo.save(session)
+            return await this.repo.save(session);
         } catch (error) {
             throw error;
         }
@@ -246,11 +259,149 @@ export class GameRepository {
             const session = await this.repo.findOne({ where: { id } });
             if (!session) return null;
 
-            // You might need to add a currentQuestionIndex field to your Game entity
-            // session.currentQuestionIndex = questionIndex;
+            session.currentQuestionIndex = questionIndex;
+            session.questionStartedAt = new Date();
+            session.timeLeft = session.questionDuration || 10;
             session.updatedAt = new Date();
 
             return await this.repo.save(session);
+        } catch (error) {
+            throw error;
+        }
+    }
+
+    /**
+     * Save/update game session
+     */
+    async saveSession(game: Game): Promise<Game> {
+        try {
+            return await this.repo.save(game);
+        } catch (error) {
+            throw error;
+        }
+    }
+
+    /**
+     * Update question timing
+     */
+    async updateQuestionTiming(id: string, timeLeft: number, questionStartedAt?: Date): Promise<Game | null> {
+        try {
+            const session = await this.repo.findOne({ where: { id } });
+            if (!session) return null;
+
+            session.timeLeft = timeLeft;
+            if (questionStartedAt) {
+                session.questionStartedAt = questionStartedAt;
+            }
+            session.updatedAt = new Date();
+
+            return await this.repo.save(session);
+        } catch (error) {
+            throw error;
+        }
+    }
+
+    /**
+     * Set question duration for a game
+     */
+    async setQuestionDuration(id: string, duration: number): Promise<Game | null> {
+        try {
+            const session = await this.repo.findOne({ where: { id } });
+            if (!session) return null;
+
+            session.questionDuration = duration;
+            session.timeLeft = duration;
+            session.updatedAt = new Date();
+
+            return await this.repo.save(session);
+        } catch (error) {
+            throw error;
+        }
+    }
+
+    /**
+     * Reset game session (for replaying)
+     */
+    async resetSession(id: string): Promise<Game | null> {
+        try {
+            const session = await this.repo.findOne({ where: { id } });
+            if (!session) return null;
+
+            session.currentQuestionIndex = 0;
+            session.status = GameState.WAITING;
+            session.isActive = false;
+            session.startedAt = new Date();
+            session.endedAt = null as any;
+            session.questionStartedAt = null as any;
+            session.timeLeft = session.questionDuration || 10;
+            session.updatedAt = new Date();
+
+            return await this.repo.save(session);
+        } catch (error) {
+            throw error;
+        }
+    }
+
+    /**
+     * Get game timing info
+     */
+    async getGameTiming(id: string): Promise<{
+        currentQuestionIndex: number;
+        timeLeft: number;
+        questionStartedAt: Date | null;
+        questionDuration: number;
+    } | null> {
+        try {
+            const session = await this.repo.findOne({ 
+                where: { id },
+                select: ['currentQuestionIndex', 'timeLeft', 'questionStartedAt', 'questionDuration']
+            });
+
+            if (!session) return null;
+
+            return {
+                currentQuestionIndex: session.currentQuestionIndex || 0,
+                timeLeft: session.timeLeft || 0,
+                questionStartedAt: session.questionStartedAt || null,
+                questionDuration: session.questionDuration || 10
+            };
+        } catch (error) {
+            throw error;
+        }
+    }
+
+    /**
+     * Check if game is accepting answers
+     */
+    async isAcceptingAnswers(id: string): Promise<boolean> {
+        try {
+            const session = await this.repo.findOne({ 
+                where: { id },
+                select: ['status', 'timeLeft']
+            });
+
+            if (!session) return false;
+
+            return session.status === GameState.IN_PROGRESS && (session.timeLeft || 0) > 0;
+        } catch (error) {
+            return false;
+        }
+    }
+
+    /**
+     * Get current question for a game
+     */
+    async getCurrentQuestion(id: string): Promise<any> {
+        try {
+            const session = await this.repo.findOne({
+                where: { id, deleted: false },
+                relations: ['quiz', 'quiz.questions', 'quiz.questions.answers']
+            });
+
+            if (!session || !session.quiz?.questions) return null;
+
+            const currentIndex = session.currentQuestionIndex || 0;
+            return session.quiz.questions[currentIndex] || null;
         } catch (error) {
             throw error;
         }

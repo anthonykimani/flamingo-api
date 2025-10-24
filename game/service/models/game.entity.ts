@@ -52,6 +52,18 @@ export class Game extends BaseEntity {
     })
     playerAnswers: PlayerAnswer[];
 
+    @Column({ default: 0 })
+    currentQuestionIndex: number;
+
+    @Column({ default: 10 })
+    timeLeft: number;
+
+    @Column({ type: 'timestamp', nullable: true })
+    questionStartedAt: Date;
+
+    @Column({ default: 10 })
+    questionDuration: number;
+
     @CreateDateColumn()
     createdAt: Date;
 

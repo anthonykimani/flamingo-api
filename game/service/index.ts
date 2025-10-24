@@ -22,7 +22,7 @@ export const server = http.createServer(app);
 
 // Initialize Socket.IO service - FIX: Use getInstance()
 const socketService = SocketService.getInstance();
-export const io = socketService.initialize(server, allowedOrigins);
+export const io = socketService.initialize(server);
 
 // Express middleware
 app.disable("x-powered-by");

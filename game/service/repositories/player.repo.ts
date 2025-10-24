@@ -160,4 +160,13 @@ export class PlayerRepository {
             throw error;
         }
     }
+
+    // repositories/player.repo.ts
+
+    async resetAnsweredStatus(gameSessionId: string): Promise<void> {
+        await this.repo.update(
+            { gameSession: { id: gameSessionId } },
+            { hasAnsweredCurrent: false }
+        );
+    }
 }

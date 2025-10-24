@@ -26,6 +26,9 @@ export class Player extends BaseEntity {
     @Column({ type: 'int', default: 0 })
     currentStreak: number;
 
+    @Column({ default: false })
+    hasAnsweredCurrent: boolean;
+
     @Column({ type: 'int', default: 0 })
     bestStreak: number;
 

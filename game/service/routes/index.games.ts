@@ -7,7 +7,7 @@ const router = express.Router();
 router.post('/create-session', GameController.createSession);
 router.post('/join', GameController.joinGame);
 router.get('/session/:gameSessionId', GameController.getSession);
-router.get('/gamepin/:gamePinId', GameController.getSessionByGamePin);
+router.get('/gamepin/:gamePinId', GameController.getGameSessionByGamePin);
 router.post('/start/:gameSessionId', GameController.startGame);
 router.post('/updateGame/:gameSessionId', GameController.updateGame)
 router.post('/end/:gameSessionId', GameController.endSession);
