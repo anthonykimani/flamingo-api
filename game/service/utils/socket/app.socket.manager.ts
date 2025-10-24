@@ -6,7 +6,6 @@ import { PlayerAnswerRepository } from "../../repositories/player-answer.repo";
 import { Exception } from "../exceptions/Exception";
 import { SocketEvents } from "../../enums/SocketEvents";
 import Validator from "../validators/validator";
-import { GameState } from "../../enums/GameState";
 
 interface PlayerSocket {
     socketId: string;
@@ -77,22 +76,22 @@ export class SocketService {
             console.log(`Client connected: ${socket.id}`);
 
             // Handle player joining a game
-            socket.on('join-game', async (data: { gameSessionId: string; playerName: string }) => {
+            socket.on(SocketEvents.JOIN_GAME, async (data: { gameSessionId: string; playerName: string }) => {
                 await this.handleJoinGame(socket, data);
             });
 
             // Handle host starting the game
-            socket.on('start-game', async (data: { gameSessionId: string }) => {
+            socket.on(SocketEvents.START_GAME, async (data: { gameSessionId: string }) => {
                 await this.handleStartGame(socket, data);
             });
 
             // Handle moving to next question
-            socket.on('next-question', async (data: { gameSessionId: string; questionIndex: number }) => {
+            socket.on(SocketEvents.NEXT_QUESTION, async (data: { gameSessionId: string; questionIndex: number }) => {
                 await this.handleNextQuestion(socket, data);
             });
 
             // Handle answer submission
-            socket.on('submit-answer', async (data: {
+            socket.on(SocketEvents.SUBMIT_ANSWER, async (data: {
                 gameSessionId: string;
                 playerName: string;
                 questionId: string;
@@ -103,28 +102,28 @@ export class SocketService {
             });
 
             // Handle showing question results
-            socket.on('show-results', async (data: { gameSessionId: string; questionId: string }) => {
+            socket.on(SocketEvents.SHOW_RESULTS, async (data: { gameSessionId: string; questionId: string }) => {
                 await this.handleShowResults(socket, data);
             });
 
             // Handle game end
-            socket.on('end-game', async (data: { gameSessionId: string }) => {
+            socket.on(SocketEvents.END_GAME, async (data: { gameSessionId: string }) => {
                 await this.handleEndGame(socket, data);
             });
 
             // Handle player leaving
-            socket.on('leave-game', async (data: { gameSessionId: string; playerName: string }) => {
+            socket.on(SocketEvents.LEAVE_GAME, async (data: { gameSessionId: string; playerName: string }) => {
                 await this.handleLeaveGame(socket, data);
             });
 
             // Handle disconnection
-            socket.on('disconnect', () => {
+            socket.on(SocketEvents.DISCONNECT, () => {
                 this.handleDisconnect(socket);
             });
 
             // Handle ping/heartbeat
-            socket.on('ping', () => {
-                socket.emit('pong');
+            socket.on(SocketEvents.PING, () => {
+                socket.emit(SocketEvents.PONG);
             });
         });
     }
@@ -138,20 +137,20 @@ export class SocketService {
 
             // Validate input
             if (Validator.isEmpty(gameSessionId) || Validator.isEmpty(playerName)) {
-                socket.emit('error', { message: 'Game session ID and player name are required' });
+                socket.emit(SocketEvents.ERROR, { message: 'Game session ID and player name are required' });
                 return;
             }
 
             // Get game session
             const game = await this.gameRepo.getSessionById(gameSessionId);
             if (!game) {
-                socket.emit('error', { message: 'Game session not found' });
+                socket.emit(SocketEvents.ERROR, { message: 'Game session not found' });
                 return;
             }
 
             // Check if game has already started
             // if (game.status !== GameState.WAITING) {
-            //     socket.emit('error', { message: 'Game has already started' });
+            //     socket.emit(SocketEvents.ERROR, { message: 'Game has already started' });
             //     return;
             // }
 
@@ -175,14 +174,14 @@ export class SocketService {
             const players = await this.playerRepo.getSessionPlayers(gameSessionId);
 
             // Notify all players in the room
-            this.io?.to(gameSessionId).emit('player-joined', {
+            this.io?.to(gameSessionId).emit(SocketEvents.PLAYER_JOINED, {
                 playerName,
                 players: players,
                 totalPlayers: players.length
             });
 
             // Send confirmation to the joining player
-            socket.emit('joined-game', {
+            socket.emit(SocketEvents.JOINED_GAME, {
                 gameSessionId,
                 playerName,
                 game
@@ -191,7 +190,7 @@ export class SocketService {
             console.log(`Player ${playerName} joined game ${gameSessionId}`);
         } catch (error) {
             console.error('Error in handleJoinGame:', error);
-            socket.emit('error', { message: 'Failed to join game' });
+            socket.emit(SocketEvents.ERROR, { message: 'Failed to join game' });
         }
     }
 
@@ -206,7 +205,7 @@ export class SocketService {
             const game = await this.gameRepo.startSession(gameSessionId);
             
             if (!game) {
-                socket.emit('error', { message: 'Failed to start game' });
+                socket.emit(SocketEvents.ERROR, { message: 'Failed to start game' });
                 return;
             }
 
@@ -215,7 +214,7 @@ export class SocketService {
             const firstQuestion = questions[0];
 
             // Notify all players that the game is starting
-            this.io?.to(gameSessionId).emit('game-started', {
+            this.io?.to(gameSessionId).emit(SocketEvents.GAME_STARTED, {
                 gameSessionId,
                 currentQuestionIndex: 0,
                 question: firstQuestion,
@@ -225,7 +224,7 @@ export class SocketService {
             console.log(`Game ${gameSessionId} started`);
         } catch (error) {
             console.error('Error in handleStartGame:', error);
-            socket.emit('error', { message: 'Failed to start game' });
+            socket.emit(SocketEvents.ERROR, { message: 'Failed to start game' });
         }
     }
 
@@ -238,7 +237,7 @@ export class SocketService {
 
             const game = await this.gameRepo.getSessionById(gameSessionId);
             if (!game) {
-                socket.emit('error', { message: 'Game not found' });
+                socket.emit(SocketEvents.ERROR, { message: 'Game not found' });
                 return;
             }
 
@@ -253,7 +252,7 @@ export class SocketService {
             const currentQuestion = questions[questionIndex];
 
             // Broadcast the next question to all players
-            this.io?.to(gameSessionId).emit('next-question', {
+            this.io?.to(gameSessionId).emit(SocketEvents.NEXT_QUESTION, {
                 questionIndex,
                 question: currentQuestion,
                 totalQuestions: questions.length
@@ -262,7 +261,7 @@ export class SocketService {
             console.log(`Game ${gameSessionId} moved to question ${questionIndex}`);
         } catch (error) {
             console.error('Error in handleNextQuestion:', error);
-            socket.emit('error', { message: 'Failed to load next question' });
+            socket.emit(SocketEvents.ERROR, { message: 'Failed to load next question' });
         }
     }
 
@@ -282,14 +281,14 @@ export class SocketService {
             // Get the game and question
             const game = await this.gameRepo.getSessionById(gameSessionId);
             if (!game) {
-                socket.emit('error', { message: 'Game not found' });
+                socket.emit(SocketEvents.ERROR, { message: 'Game not found' });
                 return;
             }
 
             // Find the question and check if answer is correct
             const question = game.quiz?.questions?.find(q => q.id === questionId);
             if (!question) {
-                socket.emit('error', { message: 'Question not found' });
+                socket.emit(SocketEvents.ERROR, { message: 'Question not found' });
                 return;
             }
 
@@ -334,7 +333,7 @@ export class SocketService {
             }
 
             // Notify the player
-            socket.emit('answer-submitted', {
+            socket.emit(SocketEvents.ANSWER_SUBMITTED, {
                 isCorrect,
                 pointsEarned,
                 answerStreak,
@@ -342,7 +341,7 @@ export class SocketService {
             });
 
             // Notify the host/room about the submission
-            socket.to(gameSessionId).emit('player-answered', {
+            socket.to(gameSessionId).emit(SocketEvents.PLAYER_ANSWERED, {
                 playerName,
                 answered: true
             });
@@ -350,7 +349,7 @@ export class SocketService {
             console.log(`Player ${playerName} submitted answer for question ${questionId}`);
         } catch (error) {
             console.error('Error in handleSubmitAnswer:', error);
-            socket.emit('error', { message: 'Failed to submit answer' });
+            socket.emit(SocketEvents.ERROR, { message: 'Failed to submit answer' });
         }
     }
 
@@ -377,7 +376,7 @@ export class SocketService {
             const leaderboard = await this.playerRepo.getLeaderboard(gameSessionId);
 
             // Broadcast results to all players
-            this.io?.to(gameSessionId).emit('question-results', {
+            this.io?.to(gameSessionId).emit(SocketEvents.QUESTION_RESULTS, {
                 questionId,
                 stats,
                 leaderboard
@@ -386,7 +385,7 @@ export class SocketService {
             console.log(`Showing results for question ${questionId} in game ${gameSessionId}`);
         } catch (error) {
             console.error('Error in handleShowResults:', error);
-            socket.emit('error', { message: 'Failed to show results' });
+            socket.emit(SocketEvents.ERROR, { message: 'Failed to show results' });
         }
     }
 
@@ -415,7 +414,7 @@ export class SocketService {
             };
 
             // Notify all players
-            this.io?.to(gameSessionId).emit('game-ended', {
+            this.io?.to(gameSessionId).emit(SocketEvents.GAME_ENDED, {
                 leaderboard,
                 summary
             });
@@ -423,7 +422,7 @@ export class SocketService {
             console.log(`Game ${gameSessionId} ended`);
         } catch (error) {
             console.error('Error in handleEndGame:', error);
-            socket.emit('error', { message: 'Failed to end game' });
+            socket.emit(SocketEvents.ERROR, { message: 'Failed to end game' });
         }
     }
 
@@ -445,7 +444,7 @@ export class SocketService {
             const players = await this.playerRepo.getSessionPlayers(gameSessionId);
 
             // Notify others
-            socket.to(gameSessionId).emit('player-left', {
+            socket.to(gameSessionId).emit(SocketEvents.PLAYER_LEFT, {
                 playerName,
                 players,
                 totalPlayers: players.length
@@ -464,7 +463,7 @@ export class SocketService {
             const { gameSessionId, playerName } = playerInfo;
             
             // Notify others in the room
-            socket.to(gameSessionId).emit('player-disconnected', {
+            socket.to(gameSessionId).emit(SocketEvents.PLAYER_DISCONNECTED, {
                 playerName
             });
 
