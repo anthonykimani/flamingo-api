@@ -205,8 +205,8 @@ class GameController extends Controller {
                 return res.send(super.response(super._400, null, ['Missing required fields']));
             }
 
-            // Check if player already answered this question
-            const existingAnswer = await answerRepo.getPlayerAnswerForQuestion(
+            // FIX: Use correct method name - getPlayerQuestionAnswer
+            const existingAnswer = await answerRepo.getPlayerQuestionAnswer(
                 gameSessionId,
                 playerName,
                 questionId
@@ -216,12 +216,12 @@ class GameController extends Controller {
                 return res.send(super.response(super._400, null, ['You have already answered this question']));
             }
 
-            // Save player answer
+            // FIX: Use correct parameter format - plain object, not relation objects
             const playerAnswer = await answerRepo.saveAnswer({
-                gameSession: { id: gameSessionId } as any,
+                gameSessionId,
                 playerName,
-                question: { id: questionId } as any,
-                selectedAnswer: { id: answerId } as any,
+                questionId,
+                answerId,
                 isCorrect,
                 pointsEarned: pointsEarned || 0,
                 answerStreak: answerStreak || 0,
@@ -229,26 +229,26 @@ class GameController extends Controller {
             });
 
             // Update player stats
-            const playerAnswers = await answerRepo.getPlayerAnswers(gameSessionId, playerName);
+            const player = await playerRepo.getPlayerByNameAndSession(gameSessionId, playerName);
 
-            const totalScore = playerAnswers.reduce((sum, ans) => sum + (ans.pointsEarned || 0), 0);
-            const correctAnswers = playerAnswers.filter(ans => ans.isCorrect).length;
-            const wrongAnswers = playerAnswers.filter(ans => !ans.isCorrect).length;
-            const bestStreak = Math.max(...playerAnswers.map(ans => ans.answerStreak || 0), 0);
+            if (player) {
+                player.totalScore = (player.totalScore || 0) + (pointsEarned || 0);
+                
+                if (isCorrect) {
+                    player.correctAnswers = (player.correctAnswers || 0) + 1;
+                    player.currentStreak = (answerStreak || 0);
+                    player.bestStreak = Math.max(player.bestStreak || 0, answerStreak || 0);
+                } else {
+                    player.wrongAnswers = (player.wrongAnswers || 0) + 1;
+                    player.currentStreak = 0;
+                }
 
-            const updatedPlayer = await playerRepo.updatePlayerStats({
-                gameSessionId,
-                playerName,
-                totalScore,
-                correctAnswers,
-                wrongAnswers,
-                currentStreak: answerStreak || 0,
-                bestStreak
-            });
+                await playerRepo.savePlayer(player);
+            }
 
             return res.send(super.response(super._200, {
                 answer: playerAnswer,
-                player: updatedPlayer
+                player: player
             }));
         } catch (error) {
             return res.send(super.response(super._500, null, super.ex(error)));
@@ -346,11 +346,21 @@ class GameController extends Controller {
             const answers = await answerRepo.getQuestionAnswers(gameSessionId, questionId);
 
             const totalAnswers = answers.length;
-            const correctCount = answers.filter(ans => ans.isCorrect).length;
-            const wrongCount = answers.filter(ans => !ans.isCorrect).length;
+            const correctCount = answers.filter((ans: any) => ans.isCorrect).length;
+            const wrongCount = answers.filter((ans: any) => !ans.isCorrect).length;
+
+            // FIX: Add type annotation for reduce accumulator
+            interface AnswerBreakdown {
+                [key: string]: {
+                    answerId: string;
+                    answerText: string;
+                    count: number;
+                    isCorrect: boolean;
+                };
+            }
 
             // Group by selected answer
-            const answerBreakdown = answers.reduce((acc, ans) => {
+            const answerBreakdown = answers.reduce<AnswerBreakdown>((acc, ans) => {
                 const answerId = ans.selectedAnswer.id;
                 if (!acc[answerId]) {
                     acc[answerId] = {
@@ -362,7 +372,7 @@ class GameController extends Controller {
                 }
                 acc[answerId].count++;
                 return acc;
-            }, {} as any);
+            }, {});
 
             const stats = {
                 totalAnswers,
@@ -402,7 +412,9 @@ class GameController extends Controller {
 
             const players = await playerRepo.getSessionPlayers(gameSessionId);
             const leaderboard = await playerRepo.getLeaderboard(gameSessionId);
-            const allAnswers = await answerRepo.getSessionAnswers(gameSessionId);
+            
+            // FIX: Use correct method name - getGameAnswers
+            const allAnswers = await answerRepo.getGameAnswers(gameSessionId);
 
             const summary = {
                 session: {
@@ -419,8 +431,8 @@ class GameController extends Controller {
                     averageScore: players.length > 0
                         ? players.reduce((sum, p) => sum + p.totalScore, 0) / players.length
                         : 0,
-                    correctAnswersTotal: allAnswers.filter(ans => ans.isCorrect).length,
-                    wrongAnswersTotal: allAnswers.filter(ans => !ans.isCorrect).length
+                    correctAnswersTotal: allAnswers.filter((ans: any) => ans.isCorrect).length,
+                    wrongAnswersTotal: allAnswers.filter((ans: any) => !ans.isCorrect).length
                 },
                 topPlayers: leaderboard.slice(0, 3),
                 allPlayers: leaderboard

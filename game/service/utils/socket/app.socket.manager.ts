@@ -1,686 +1,542 @@
-import { GameRepository } from "../../repositories/game.repo";
-import { PlayerRepository } from "../../repositories/player.repo";
-import { ServerOptions, Server as SocketServer, Socket } from "socket.io";
-import { Server as HttpServer } from "http";
-import { Exception } from "../exceptions/Exception";
-import { SocketEvents } from "../../enums/SocketEvents";
-import Validator from "../validators/validator";
-import { Game } from "../../models/game.entity";
-import { GameState } from "../../enums/GameState";
+import { Server, Socket } from 'socket.io';
+import { GameRepository } from '../../repositories/game.repo';
+import { PlayerRepository } from '../../repositories/player.repo';
+import { PlayerAnswerRepository } from '../../repositories/player-answer.repo';
+import { SocketEvents } from '../../enums/SocketEvents';
+import { GameState } from '../../enums/GameState';
+import { Player } from '../../models/player.entity';
 
 export class SocketService {
     private static instance: SocketService;
-    private io: SocketServer | null = null;
-    protected gameRepo: GameRepository = new GameRepository();
-    protected playerRepo: PlayerRepository = new PlayerRepository();
-    private timers: Map<string, NodeJS.Timeout> = new Map();
+    private io: Server | null = null;
+    private gameRepository: GameRepository;
+    private playerRepository: PlayerRepository;
+    private playerAnswerRepository: PlayerAnswerRepository;
+    private gameTimers: Map<string, NodeJS.Timeout> = new Map();
+    private countdownTimers: Map<string, NodeJS.Timeout> = new Map();
 
-    private constructor() {}
+    private constructor() {
+        this.gameRepository = new GameRepository();
+        this.playerRepository = new PlayerRepository();
+        this.playerAnswerRepository = new PlayerAnswerRepository();
+    }
 
-    static getInstance(): SocketService {
+    public static getInstance(): SocketService {
         if (!SocketService.instance) {
             SocketService.instance = new SocketService();
         }
         return SocketService.instance;
     }
 
-    initialize(httpServer: HttpServer, opts?: Partial<ServerOptions>) {
-        try {
-            if (!this.io) {
-                this.io = new SocketServer(httpServer, {
-                    cors: {
-                        origin: process.env.CLIENT_URL || "http://localhost:3000",
-                        methods: ["GET", "POST"],
-                        credentials: true
-                    },
-                    ...opts
-                });
-
-                if (this.io) {
-                    this.setupEventListeners();
-                    console.log("✅ Socket.IO initialized successfully");
-                }
+    public initialize(server: any): Server {
+        this.io = new Server(server, {
+            cors: {
+                origin: process.env.FRONTEND_URL || '*',
+                methods: ['GET', 'POST']
             }
+        });
 
-            return this.io;
-        } catch (error) {
-            new Exception("Socket.IO has not been initialized.", 500, "major", error, "initialize");
-            throw error;
-        }
-    }
-
-    getIO(): SocketServer {
-        if (!this.io) {
-            new Exception("Socket.IO has not been initialized", 500, "major", "Socket.IO has not been initialized", "getIO");
-            throw new Error("Socket.IO has not been initialized. Please call initialize() first.");
-        }
-
+        this.setupSocketHandlers();
         return this.io;
     }
 
-    private setupEventListeners() {
-        if (!this.io) {
-            new Exception(
-                "Socket.IO has not been initialized.",
-                500,
-                "major",
-                "Socket.IO has not been initialized.",
-                "setupEventListeners"
-            );
-            return;
-        }
+    private setupSocketHandlers() {
+        if (!this.io) return;
 
-        this.io.on(SocketEvents.CONNECTION, async (socket: Socket) => {
-            console.log(`🔌 Client connected: ${socket.id}`);
+        this.io.on(SocketEvents.CONNECTION, (socket: Socket) => {
+            console.log(`✅ Client connected: ${socket.id}`);
 
-            // Handle joining a game
-            socket.on(SocketEvents.JOIN_GAME, async (data: { gameSessionId: string, playerName: string }) => {
+            // Join game room
+            socket.on(SocketEvents.JOIN_GAME, async (data: { gameSessionId: string; playerName: string }) => {
                 await this.handleJoinGame(socket, data);
             });
 
-            // Handle leaving a game
-            socket.on(SocketEvents.LEAVE_GAME, async (data: { gameSessionId: string, playerName: string }) => {
+            // Leave game room
+            socket.on(SocketEvents.LEAVE_GAME, async (data: { gameSessionId: string; playerName: string }) => {
                 await this.handleLeaveGame(socket, data);
             });
 
-            // Handle host starting the game
+            // Start game
             socket.on(SocketEvents.START_GAME, async (data: { gameSessionId: string }) => {
                 await this.handleStartGame(socket, data);
             });
 
-            // Handle host moving to next question
-            socket.on(SocketEvents.NEXT_QUESTION, async (data: { gameSessionId: string, questionIndex: number }) => {
+            // Next question
+            socket.on(SocketEvents.NEXT_QUESTION, async (data: { gameSessionId: string; questionIndex: number }) => {
                 await this.handleNextQuestion(socket, data);
             });
 
-            // Handle player submitting answer
-            socket.on(SocketEvents.SUBMIT_ANSWER, async (data: any) => {
+            // Submit answer
+            socket.on(SocketEvents.SUBMIT_ANSWER, async (data: {
+                gameSessionId: string;
+                playerName: string;
+                questionId: string;
+                answerId: string;
+                timeToAnswer: number;
+            }) => {
                 await this.handleSubmitAnswer(socket, data);
             });
 
-            // Handle host ending game
-            socket.on(SocketEvents.END_GAME, async (data: { gameSessionId: string }) => {
-                await this.handleEndGame(socket, data);
-            });
-
-            // Handle disconnect
-            socket.on(SocketEvents.DISCONNECT, async () => {
-                await this.handleDisconnect(socket);
+            // Disconnect
+            socket.on(SocketEvents.DISCONNECT, () => {
+                console.log(`❌ Client disconnected: ${socket.id}`);
             });
         });
     }
 
-    /**
-     * Handle player joining game
-     */
-    private async handleJoinGame(
-        socket: Socket,
-        data: { gameSessionId: string, playerName: string }
-    ) {
+    private async handleJoinGame(socket: Socket, data: { gameSessionId: string; playerName: string }) {
         try {
             const { gameSessionId, playerName } = data;
 
-            if (Validator.isEmpty(gameSessionId) || Validator.isEmpty(playerName)) {
-                socket.emit(SocketEvents.ERROR, { message: "Session ID and player name are required" });
+            // FIX #1: Don't add host as a player
+            if (playerName === 'Host' || playerName === 'Spectator') {
+                // Just join the room, don't create player entity
+                socket.join(gameSessionId);
+                console.log(`🎮 Host joined room: ${gameSessionId}`);
+                
+                socket.emit(SocketEvents.JOINED_GAME, {
+                    success: true,
+                    message: 'Host joined successfully',
+                    isHost: true
+                });
                 return;
             }
 
-            // Get current game state
-            const game = await this.gameRepo.getSessionWithDetails(gameSessionId);
-            
+            // Check if game exists
+            const game = await this.gameRepository.getSessionById(gameSessionId);
             if (!game) {
-                socket.emit(SocketEvents.ERROR, { message: "Game not found" });
+                socket.emit(SocketEvents.ERROR, { message: 'Game session not found' });
                 return;
             }
 
-            // Check if game is already full or completed
-            if (game.status === GameState.COMPLETED) {
-                socket.emit(SocketEvents.ERROR, { message: "Game has ended" });
-                return;
-            }
+            // Check if player already exists
+            let player = await this.playerRepository.getPlayerByNameAndSession(gameSessionId, playerName);
 
-            // Find or create player
-            let player = await this.playerRepo.getPlayerByNameAndSession(gameSessionId, playerName);
-            
             if (!player) {
-                // Check if nickname is available
-                const existingPlayer = await this.playerRepo.getPlayerByNameAndSession(gameSessionId, playerName);
-                if (existingPlayer) {
-                    socket.emit(SocketEvents.ERROR, { message: "Nickname already taken" });
-                    return;
-                }
-
                 // Create new player
-                player = await this.playerRepo.savePlayer({
-                    gameSession: { id: gameSessionId } as any,
-                    playerName,
-                    totalScore: 0,
-                    correctAnswers: 0,
-                    wrongAnswers: 0,
-                    currentStreak: 0,
-                    bestStreak: 0,
-                    hasAnsweredCurrent: false,
-                    joinedAt: new Date()
-                } as any);
+                player = new Player();
+                player.playerName = playerName;
+                player.gameSession = { id: gameSessionId } as any;
+                player.totalScore = 0;
+                player.correctAnswers = 0;
+                player.wrongAnswers = 0;
+                player.currentStreak = 0;
+                player.bestStreak = 0;
+                player.hasAnsweredCurrent = false;
 
-                console.log(`👤 New player ${playerName} joined game ${gameSessionId}`);
+                await this.playerRepository.savePlayer(player);
+                console.log(`👤 New player created: ${playerName}`);
             } else {
-                console.log(`🔄 Player ${playerName} rejoined game ${gameSessionId}`);
+                console.log(`👤 Existing player rejoined: ${playerName}`);
             }
 
             // Join socket room
             socket.join(gameSessionId);
-            socket.data.gameSessionId = gameSessionId;
-            socket.data.playerName = playerName;
 
-            // Calculate current time left
-            const timeLeft = this.calculateTimeLeft(game);
+            // Get updated player list (excluding host)
+            const players = await this.playerRepository.getLeaderboard(gameSessionId);
 
-            // Send current game state to the joining player (for rejoining)
+            // Confirm join to the player
             socket.emit(SocketEvents.JOINED_GAME, {
-                gameSessionId,
-                playerName,
-                gameState: game.status,
-                currentQuestionIndex: game.currentQuestionIndex || 0,
-                timeLeft,
-                currentQuestion: game.quiz?.questions?.[game.currentQuestionIndex || 0] || null,
-                totalQuestions: game.quiz?.questions?.length || 0,
-                playerStats: {
-                    totalScore: player.totalScore,
-                    correctAnswers: player.correctAnswers,
-                    wrongAnswers: player.wrongAnswers,
-                    currentStreak: player.currentStreak,
-                    bestStreak: player.bestStreak
-                },
-                hasAnsweredCurrent: player.hasAnsweredCurrent || false
+                success: true,
+                player: player,
+                gameState: game.status
             });
 
-            // Notify all players about new player
-            const playerCount = await this.getPlayerCount(gameSessionId);
+            // Notify all clients in the room about the new player
             this.io?.to(gameSessionId).emit(SocketEvents.PLAYER_JOINED, {
                 playerName,
-                playerCount
+                players: players,
+                totalPlayers: players.length
             });
 
+            console.log(`✅ Player ${playerName} joined game ${gameSessionId}`);
         } catch (error) {
-            console.error("❌ Error in handleJoinGame:", error);
-            socket.emit(SocketEvents.ERROR, { message: "Failed to join game" });
+            console.error('Error in handleJoinGame:', error);
+            socket.emit(SocketEvents.ERROR, { message: 'Failed to join game' });
         }
     }
 
-    /**
-     * Handle player leaving game
-     */
-    private async handleLeaveGame(
-        socket: Socket,
-        data: { gameSessionId: string, playerName: string }
-    ) {
+    private async handleLeaveGame(socket: Socket, data: { gameSessionId: string; playerName: string }) {
         try {
             const { gameSessionId, playerName } = data;
 
             socket.leave(gameSessionId);
-            
-            const playerCount = await this.getPlayerCount(gameSessionId);
-            this.io?.to(gameSessionId).emit(SocketEvents.PLAYER_LEFT, {
-                playerName,
-                playerCount
-            });
 
-            console.log(`👋 Player ${playerName} left game ${gameSessionId}`);
+            // Don't remove host
+            if (playerName !== 'Host' && playerName !== 'Spectator') {
+                await this.playerRepository.removePlayer(gameSessionId, playerName);
+
+                const players = await this.playerRepository.getLeaderboard(gameSessionId);
+
+                this.io?.to(gameSessionId).emit(SocketEvents.PLAYER_LEFT, {
+                    playerName,
+                    players: players,
+                    totalPlayers: players.length
+                });
+
+                console.log(`👋 Player ${playerName} left game ${gameSessionId}`);
+            }
         } catch (error) {
-            console.error("❌ Error in handleLeaveGame:", error);
+            console.error('Error in handleLeaveGame:', error);
         }
     }
 
-    /**
-     * Handle host starting the game
-     */
-    private async handleStartGame(
-        socket: Socket,
-        data: { gameSessionId: string }
-    ) {
+    private async handleStartGame(socket: Socket, data: { gameSessionId: string }) {
         try {
             const { gameSessionId } = data;
 
-            const game = await this.gameRepo.getSessionWithDetails(gameSessionId);
-            
+            const game = await this.gameRepository.getSessionWithDetails(gameSessionId);
             if (!game) {
-                socket.emit(SocketEvents.ERROR, { message: "Game not found" });
+                socket.emit(SocketEvents.ERROR, { message: 'Game not found' });
                 return;
             }
 
-            // Update game state to COUNTDOWN
-            await this.gameRepo.updateGameState(gameSessionId, GameState.COUNTDOWN);
-            await this.gameRepo.updateCurrentQuestion(gameSessionId, 0);
-            
-            game.currentQuestionIndex = 0;
-            await this.gameRepo.saveSession(game);
+            // Update game state to WAITING (pre-countdown)
+            await this.gameRepository.updateGameState(gameSessionId, GameState.WAITING);
 
-            // Reset all players' answered status
-            await this.playerRepo.resetAnsweredStatus(gameSessionId);
-
-            // Get first question
-            const firstQuestion = game.quiz?.questions?.[0];
-
-            // Notify all players - game is starting, navigate to game page
+            // Broadcast game started event to all clients
             this.io?.to(gameSessionId).emit(SocketEvents.GAME_STARTED, {
                 gameSessionId,
-                currentQuestionIndex: 0,
-                question: firstQuestion,
-                totalQuestions: game.quiz?.questions?.length || 0
+                message: 'Game is starting!'
             });
 
-            console.log(`🎮 Game ${gameSessionId} started - broadcasting countdown`);
+            console.log(`🚀 Game ${gameSessionId} started - entering countdown`);
 
-            // Start countdown sequence - backend controls timing
-            this.broadcastCountdown(gameSessionId, 3, async () => {
-                // Countdown finished, now start the timer
-                await this.gameRepo.updateGameState(gameSessionId, GameState.IN_PROGRESS);
-                
-                game.questionStartedAt = new Date();
-                game.timeLeft = game.questionDuration || 10;
-                await this.gameRepo.saveSession(game);
-
-                // Start the question timer
-                this.startQuestionTimer(gameSessionId);
-
-                // Notify everyone timer has started
-                this.io?.to(gameSessionId).emit(SocketEvents.QUESTION_STARTED, {
-                    gameSessionId,
-                    questionIndex: 0,
-                    timeLeft: game.timeLeft
-                });
-
-                console.log(`⏱️ Timer started for game ${gameSessionId}`);
-            });
+            // FIX #4: Wait a moment for clients to navigate, then start countdown
+            setTimeout(() => {
+                this.startCountdown(gameSessionId);
+            }, 1000);
 
         } catch (error) {
-            console.error("❌ Error in handleStartGame:", error);
-            socket.emit(SocketEvents.ERROR, { message: "Failed to start game" });
+            console.error('Error in handleStartGame:', error);
+            socket.emit(SocketEvents.ERROR, { message: 'Failed to start game' });
         }
     }
 
-    /**
-     * Handle host moving to next question
-     */
-    private async handleNextQuestion(
-        socket: Socket,
-        data: { gameSessionId: string, questionIndex: number }
-    ) {
+    private async startCountdown(gameSessionId: string) {
         try {
-            const { gameSessionId, questionIndex } = data;
+            // Update state to COUNTDOWN
+            await this.gameRepository.updateGameState(gameSessionId, GameState.COUNTDOWN);
 
-            const game = await this.gameRepo.getSessionWithDetails(gameSessionId);
-            
-            if (!game) {
-                socket.emit(SocketEvents.ERROR, { message: "Game not found" });
-                return;
+            let countdown = 3;
+
+            // Clear any existing countdown timer
+            if (this.countdownTimers.has(gameSessionId)) {
+                clearInterval(this.countdownTimers.get(gameSessionId)!);
             }
 
-            // Clear previous timer
-            this.clearQuestionTimer(gameSessionId);
+            // Broadcast countdown
+            const countdownInterval = setInterval(() => {
+                if (countdown > 0) {
+                    console.log(`⏰ Countdown ${gameSessionId}: ${countdown}`);
+                    this.io?.to(gameSessionId).emit('countdown-tick', { 
+                        count: countdown,
+                        gameSessionId 
+                    });
+                    countdown--;
+                } else {
+                    clearInterval(countdownInterval);
+                    this.countdownTimers.delete(gameSessionId);
+                    
+                    // Start first question
+                    this.startQuestion(gameSessionId, 0);
+                }
+            }, 1000);
 
-            // Update game state to COUNTDOWN
-            await this.gameRepo.updateGameState(gameSessionId, GameState.COUNTDOWN);
-            await this.gameRepo.updateCurrentQuestion(gameSessionId, questionIndex);
-            
-            game.currentQuestionIndex = questionIndex;
-            await this.gameRepo.saveSession(game);
-
-            // Reset all players' answered status
-            await this.playerRepo.resetAnsweredStatus(gameSessionId);
-
-            // Get the question
-            const question = game.quiz?.questions?.[questionIndex];
-
-            // Notify all players - show next question
-            this.io?.to(gameSessionId).emit(SocketEvents.NEXT_QUESTION, {
-                gameSessionId,
-                questionIndex,
-                question
-            });
-
-            console.log(`➡️ Game ${gameSessionId} moved to question ${questionIndex} - broadcasting countdown`);
-
-            // Start countdown sequence
-            this.broadcastCountdown(gameSessionId, 3, async () => {
-                // Countdown finished, start the timer
-                await this.gameRepo.updateGameState(gameSessionId, GameState.IN_PROGRESS);
-                
-                game.questionStartedAt = new Date();
-                game.timeLeft = game.questionDuration || 10;
-                await this.gameRepo.saveSession(game);
-
-                // Start question timer
-                this.startQuestionTimer(gameSessionId);
-
-                // Notify everyone timer has started
-                this.io?.to(gameSessionId).emit(SocketEvents.QUESTION_STARTED, {
-                    gameSessionId,
-                    questionIndex,
-                    timeLeft: game.timeLeft
-                });
-
-                console.log(`⏱️ Timer started for question ${questionIndex}`);
-            });
+            this.countdownTimers.set(gameSessionId, countdownInterval);
 
         } catch (error) {
-            console.error("❌ Error in handleNextQuestion:", error);
-            socket.emit(SocketEvents.ERROR, { message: "Failed to move to next question" });
+            console.error('Error in startCountdown:', error);
         }
     }
 
-    /**
-     * Handle player submitting answer
-     */
-    private async handleSubmitAnswer(
-        socket: Socket,
-        data: {
-            gameSessionId: string;
-            playerName: string;
-            questionId: string;
-            answerId: string;
-            timeToAnswer: number;
-        }
-    ) {
+    private async startQuestion(gameSessionId: string, questionIndex: number) {
         try {
-            const { gameSessionId, playerName, questionId, answerId, timeToAnswer } = data;
-
-            const game = await this.gameRepo.getSessionWithDetails(gameSessionId);
-            
-            if (!game) {
-                socket.emit(SocketEvents.ERROR, { message: "Game not found" });
+            const game = await this.gameRepository.getSessionWithDetails(gameSessionId);
+            if (!game || !game.quiz?.questions) {
+                console.error('Game or questions not found');
                 return;
             }
 
-            // Check if game is still accepting answers
-            if (game.status !== GameState.IN_PROGRESS) {
-                socket.emit(SocketEvents.ERROR, { message: "Question is closed" });
+            const question = game.quiz.questions[questionIndex];
+            if (!question) {
+                // No more questions - end game
+                await this.endGame(gameSessionId);
                 return;
             }
 
-            // Get player
-            const player = await this.playerRepo.getPlayerByNameAndSession(gameSessionId, playerName);
-            
-            if (!player) {
-                socket.emit(SocketEvents.ERROR, { message: "Player not found" });
-                return;
-            }
-
-            if (player.hasAnsweredCurrent) {
-                socket.emit(SocketEvents.ERROR, { message: "Already answered this question" });
-                return;
-            }
-
-            // Find the answer and check correctness
-            const question = game.quiz.questions[game.currentQuestionIndex];
-            const answer = question.answers.find(a => a.id === answerId);
-            const isCorrect = answer?.correctAnswer || false;
-
-            // Calculate points (time-based scoring)
-            let points = 0;
-            let newStreak = player.currentStreak;
-            
-            if (isCorrect) {
-                newStreak = player.currentStreak + 1;
-                const timeBonus = Math.floor(((game.questionDuration - timeToAnswer) / game.questionDuration) * 50);
-                points = 100 + (newStreak * 50) + timeBonus;
-            } else {
-                newStreak = 0;
-            }
-
-            // Update player stats
-            await this.playerRepo.updatePlayerStats({
-                gameSessionId,
-                playerName,
-                totalScore: player.totalScore + points,
-                correctAnswers: isCorrect ? player.correctAnswers + 1 : player.correctAnswers,
-                wrongAnswers: !isCorrect ? player.wrongAnswers + 1 : player.wrongAnswers,
-                currentStreak: newStreak,
-                bestStreak: Math.max(player.bestStreak, newStreak)
-            });
-
-            // Mark as answered
-            player.hasAnsweredCurrent = true;
-            await this.playerRepo.savePlayer(player);
-
-            // Send confirmation to player
-            socket.emit(SocketEvents.ANSWER_SUBMITTED, {
-                isCorrect,
-                pointsEarned: points,
-                newScore: player.totalScore + points,
-                currentStreak: newStreak
-            });
-
-            // Notify host about answer received
-            const answerCount = await this.getAnswerCount(gameSessionId);
-            this.io?.to(gameSessionId).emit(SocketEvents.PLAYER_ANSWERED, {
-                playerName,
-                answerCount
-            });
-
-            console.log(`✅ Player ${playerName} answered (${isCorrect ? 'correct' : 'wrong'})`);
-        } catch (error) {
-            console.error("❌ Error in handleSubmitAnswer:", error);
-            socket.emit(SocketEvents.ERROR, { message: "Failed to submit answer" });
-        }
-    }
-
-    /**
-     * Handle host ending game
-     */
-    private async handleEndGame(
-        socket: Socket,
-        data: { gameSessionId: string }
-    ) {
-        try {
-            const { gameSessionId } = data;
-
-            // Clear timer
-            this.clearQuestionTimer(gameSessionId);
+            // Reset all players' hasAnsweredCurrent flag
+            await this.playerRepository.resetAnsweredStatus(gameSessionId);
 
             // Update game state
-            await this.gameRepo.updateGameState(gameSessionId, GameState.COMPLETED);
+            await this.gameRepository.updateCurrentQuestion(gameSessionId, questionIndex);
+            await this.gameRepository.updateGameState(gameSessionId, GameState.IN_PROGRESS);
 
-            // Get final leaderboard
-            const leaderboard = await this.playerRepo.getLeaderboard(gameSessionId);
+            const questionStartTime = new Date();
 
-            // Notify all players
-            this.io?.to(gameSessionId).emit(SocketEvents.GAME_ENDED, {
-                gameSessionId,
-                leaderboard
+            // Broadcast question started
+            this.io?.to(gameSessionId).emit(SocketEvents.QUESTION_STARTED, {
+                question: {
+                    id: question.id,
+                    question: question.question,
+                    answers: question.answers,
+                    questionNumber: questionIndex + 1,
+                    totalQuestions: game.quiz.questions.length
+                },
+                questionIndex,
+                duration: game.questionDuration || 10,
+                startTime: questionStartTime
             });
 
-            console.log(`🏁 Game ${gameSessionId} ended`);
+            console.log(`📝 Question ${questionIndex + 1} started for game ${gameSessionId}`);
+
+            // Start timer
+            this.startQuestionTimer(gameSessionId, game.questionDuration || 10);
+
         } catch (error) {
-            console.error("❌ Error in handleEndGame:", error);
-            socket.emit(SocketEvents.ERROR, { message: "Failed to end game" });
+            console.error('Error in startQuestion:', error);
         }
     }
 
-    /**
-     * Handle socket disconnect
-     */
-    private async handleDisconnect(socket: Socket) {
-        const { gameSessionId, playerName } = socket.data;
+    private startQuestionTimer(gameSessionId: string, duration: number) {
+        // Clear existing timer
+        if (this.gameTimers.has(gameSessionId)) {
+            clearInterval(this.gameTimers.get(gameSessionId)!);
+        }
 
-        if (gameSessionId && playerName) {
-            console.log(`🔌 Player ${playerName} disconnected from game ${gameSessionId}`);
+        let timeLeft = duration;
 
-            const playerCount = await this.getPlayerCount(gameSessionId);
-            
-            this.io?.to(gameSessionId).emit(SocketEvents.PLAYER_DISCONNECTED, {
-                playerName,
-                playerCount
+        const timerInterval = setInterval(async () => {
+            timeLeft--;
+
+            // Broadcast time update
+            this.io?.to(gameSessionId).emit('time-update', {
+                timeLeft,
+                gameSessionId
             });
-        }
 
-        console.log(`🔌 Client disconnected: ${socket.id}`);
-    }
-
-    /**
-     * Start question timer
-     */
-    private startQuestionTimer(gameSessionId: string) {
-        const timer = setInterval(async () => {
-            const game = await this.gameRepo.getSessionById(gameSessionId);
-            
-            if (!game || !game.questionStartedAt) {
-                this.clearQuestionTimer(gameSessionId);
-                return;
-            }
-
-            // Calculate time left
-            const elapsed = Math.floor((Date.now() - game.questionStartedAt.getTime()) / 1000);
-            const timeLeft = Math.max(0, (game.questionDuration || 10) - elapsed);
-
-            // Update time in database
-            game.timeLeft = timeLeft;
-            await this.gameRepo.saveSession(game);
-
-            // Broadcast time update to all clients
-            this.io?.to(gameSessionId).emit('time-update', { timeLeft });
-
-            // Time's up
             if (timeLeft <= 0) {
-                this.clearQuestionTimer(gameSessionId);
-                await this.handleTimeUp(gameSessionId);
+                clearInterval(timerInterval);
+                this.gameTimers.delete(gameSessionId);
+
+                // Question timeout - show results
+                await this.showQuestionResults(gameSessionId);
             }
         }, 1000);
 
-        this.timers.set(gameSessionId, timer);
-        console.log(`⏱️ Timer started for game ${gameSessionId}`);
+        this.gameTimers.set(gameSessionId, timerInterval);
     }
 
-    /**
-     * Clear question timer
-     */
-    private clearQuestionTimer(gameSessionId: string) {
-        const timer = this.timers.get(gameSessionId);
-        
-        if (timer) {
-            clearInterval(timer);
-            this.timers.delete(gameSessionId);
-            console.log(`⏱️ Timer cleared for game ${gameSessionId}`);
-        }
-    }
-
-    /**
-     * Handle time up
-     */
-    private async handleTimeUp(gameSessionId: string) {
+    private async handleSubmitAnswer(socket: Socket, data: {
+        gameSessionId: string;
+        playerName: string;
+        questionId: string;
+        answerId: string;
+        timeToAnswer: number;
+    }) {
         try {
-            const game = await this.gameRepo.getSessionWithDetails(gameSessionId);
-            
-            if (!game) return;
+            const { gameSessionId, playerName, questionId, answerId, timeToAnswer } = data;
 
-            // Update state to TIMEOUT
-            await this.gameRepo.updateGameState(gameSessionId, GameState.TIMEOUT);
+            console.log(`📥 Answer submitted by ${playerName}:`, { questionId, answerId, timeToAnswer });
 
-            // Wait a moment for any last answers
-            await new Promise(resolve => setTimeout(resolve, 1000));
+            // Get player
+            const player = await this.playerRepository.getPlayerByNameAndSession(gameSessionId, playerName);
+            if (!player) {
+                socket.emit(SocketEvents.ERROR, { message: 'Player not found' });
+                return;
+            }
 
-            // Get leaderboard
-            const leaderboard = await this.playerRepo.getLeaderboard(gameSessionId);
+            // Check if already answered
+            if (player.hasAnsweredCurrent) {
+                socket.emit(SocketEvents.ERROR, { message: 'Already answered this question' });
+                return;
+            }
 
-            // Get correct answer
-            const currentQuestion = game.quiz.questions[game.currentQuestionIndex];
-            const correctAnswer = currentQuestion.answers.find(a => a.correctAnswer);
+            // Get game and question
+            const game = await this.gameRepository.getSessionWithDetails(gameSessionId);
+            if (!game) {
+                socket.emit(SocketEvents.ERROR, { message: 'Game not found' });
+                return;
+            }
 
-            // Update state to RESULTS_READY
-            await this.gameRepo.updateGameState(gameSessionId, GameState.RESULTS_READY);
+            const question = game.quiz?.questions?.find(q => q.id === questionId);
+            if (!question) {
+                socket.emit(SocketEvents.ERROR, { message: 'Question not found' });
+                return;
+            }
 
-            // Show results to all players
-            this.io?.to(gameSessionId).emit(SocketEvents.QUESTION_RESULTS, {
-                leaderboard,
-                correctAnswer,
-                questionIndex: game.currentQuestionIndex
+            const selectedAnswer = question.answers?.find(a => a.id === answerId);
+            if (!selectedAnswer) {
+                socket.emit(SocketEvents.ERROR, { message: 'Answer not found' });
+                return;
+            }
+
+            const isCorrect = selectedAnswer.correctAnswer;
+
+            // Calculate score
+            let pointsEarned = 0;
+            let newStreak = player.currentStreak;
+
+            if (isCorrect) {
+                newStreak = player.currentStreak + 1;
+                
+                // Base points
+                pointsEarned = 100;
+                
+                // Streak bonus
+                pointsEarned += newStreak * 50;
+                
+                // Time bonus (max 50 points)
+                const timeBonusPercent = Math.max(0, (game.questionDuration - timeToAnswer) / game.questionDuration);
+                const timeBonus = Math.floor(timeBonusPercent * 50);
+                pointsEarned += timeBonus;
+
+                // Update player stats
+                player.totalScore += pointsEarned;
+                player.correctAnswers += 1;
+                player.currentStreak = newStreak;
+                player.bestStreak = Math.max(player.bestStreak, newStreak);
+            } else {
+                // Wrong answer - reset streak
+                newStreak = 0;
+                player.wrongAnswers += 1;
+                player.currentStreak = 0;
+            }
+
+            player.hasAnsweredCurrent = true;
+            await this.playerRepository.savePlayer(player);
+
+            // Save answer record
+            try {
+                await this.playerAnswerRepository.saveAnswer({
+                    gameSessionId,
+                    playerName,
+                    questionId,
+                    answerId,
+                    isCorrect,
+                    pointsEarned,
+                    answerStreak: newStreak,
+                    timeToAnswer
+                });
+                console.log(`💾 Answer saved to database`);
+            } catch (saveError) {
+                console.error('Failed to save answer to database:', saveError);
+                // Continue anyway - player stats are already updated
+            }
+
+            // Confirm to player
+            socket.emit(SocketEvents.ANSWER_SUBMITTED, {
+                success: true,
+                isCorrect,
+                pointsEarned,
+                currentStreak: newStreak,
+                totalScore: player.totalScore
             });
 
-            console.log(`⏰ Time up for game ${gameSessionId}`);
+            // Get answer count
+            const players = await this.playerRepository.getSessionPlayers(gameSessionId);
+            const answeredCount = players.filter(p => p.hasAnsweredCurrent).length;
+
+            // Notify host of answer count
+            this.io?.to(gameSessionId).emit(SocketEvents.PLAYER_ANSWERED, {
+                playerName,
+                answeredCount,
+                totalPlayers: players.length
+            });
+
+            console.log(`✅ Answer recorded for ${playerName}: ${isCorrect ? 'CORRECT' : 'WRONG'} (+${pointsEarned} points)`);
+
         } catch (error) {
-            console.error("❌ Error in handleTimeUp:", error);
+            console.error('Error in handleSubmitAnswer:', error);
+            socket.emit(SocketEvents.ERROR, { message: 'Failed to submit answer' });
         }
     }
 
-    /**
-     * Calculate time left for current question
-     */
-    private calculateTimeLeft(game: Game): number {
-        if (!game.questionStartedAt) {
-            return game.questionDuration || 10;
-        }
-
-        const elapsed = Math.floor((Date.now() - game.questionStartedAt.getTime()) / 1000);
-        return Math.max(0, (game.questionDuration || 10) - elapsed);
-    }
-
-    /**
-     * Get player count in a room
-     */
-    private async getPlayerCount(gameSessionId: string): Promise<number> {
+    private async showQuestionResults(gameSessionId: string) {
         try {
-            if (!this.io) return 0;
-            
-            const room = this.io.sockets.adapter.rooms.get(gameSessionId);
-            return room ? room.size : 0;
+            // Update state
+            await this.gameRepository.updateGameState(gameSessionId, GameState.RESULTS_READY);
+
+            // Get leaderboard
+            const leaderboard = await this.playerRepository.getLeaderboard(gameSessionId);
+
+            // Broadcast results
+            this.io?.to(gameSessionId).emit(SocketEvents.QUESTION_RESULTS, {
+                leaderboard,
+                gameSessionId
+            });
+
+            console.log(`📊 Results shown for game ${gameSessionId}`);
+
         } catch (error) {
-            console.error("Error getting player count:", error);
-            return 0;
+            console.error('Error in showQuestionResults:', error);
         }
     }
 
-    /**
-     * Get answer count for current question
-     */
-    private async getAnswerCount(gameSessionId: string): Promise<number> {
+    private async handleNextQuestion(socket: Socket, data: { gameSessionId: string; questionIndex: number }) {
         try {
-            const players = await this.playerRepo.getSessionPlayers(gameSessionId);
-            return players.filter(p => p.hasAnsweredCurrent).length;
+            const { gameSessionId, questionIndex } = data;
+
+            console.log(`➡️ Moving to question ${questionIndex + 1}`);
+
+            // Start countdown for next question
+            await this.gameRepository.updateGameState(gameSessionId, GameState.COUNTDOWN);
+
+            let countdown = 3;
+
+            const countdownInterval = setInterval(() => {
+                if (countdown > 0) {
+                    this.io?.to(gameSessionId).emit('countdown-tick', { 
+                        count: countdown,
+                        gameSessionId 
+                    });
+                    countdown--;
+                } else {
+                    clearInterval(countdownInterval);
+                    this.startQuestion(gameSessionId, questionIndex);
+                }
+            }, 1000);
+
         } catch (error) {
-            console.error("Error getting answer count:", error);
-            return 0;
+            console.error('Error in handleNextQuestion:', error);
         }
     }
 
-    /**
-     * Public method to emit events from outside (e.g., from REST API)
-     */
-    public emitToGame(sessionId: string, event: string, data: any) {
-        if (this.io) {
-            this.io.to(sessionId).emit(event, data);
-        }
-    }
-
-    /**
-     * Broadcast countdown ticks to all clients
-     * This ensures synchronized countdown across all players
-     */
-    private broadcastCountdown(
-        gameSessionId: string,
-        countdownStart: number,
-        onComplete: () => void
-    ) {
-        let currentCount = countdownStart;
-
-        const broadcastTick = () => {
-            if (currentCount > 0) {
-                // Broadcast current countdown number
-                this.io?.to(gameSessionId).emit('countdown-tick', {
-                    countdown: currentCount
-                });
-                console.log(`⏳ Countdown: ${currentCount}`);
-                
-                currentCount--;
-                setTimeout(broadcastTick, 1000);
-            } else {
-                // Countdown finished
-                console.log(`✅ Countdown complete for ${gameSessionId}`);
-                onComplete();
+    private async endGame(gameSessionId: string) {
+        try {
+            // Clear timers
+            if (this.gameTimers.has(gameSessionId)) {
+                clearInterval(this.gameTimers.get(gameSessionId)!);
+                this.gameTimers.delete(gameSessionId);
             }
-        };
+            if (this.countdownTimers.has(gameSessionId)) {
+                clearInterval(this.countdownTimers.get(gameSessionId)!);
+                this.countdownTimers.delete(gameSessionId);
+            }
 
-        // Start broadcasting
-        broadcastTick();
+            // Update game state
+            await this.gameRepository.updateGameState(gameSessionId, GameState.COMPLETED);
+            await this.gameRepository.endSession(gameSessionId);
+
+            // Get final leaderboard
+            const leaderboard = await this.playerRepository.getLeaderboard(gameSessionId);
+
+            // Broadcast game ended
+            this.io?.to(gameSessionId).emit(SocketEvents.GAME_ENDED, {
+                leaderboard,
+                gameSessionId,
+                message: 'Game completed!'
+            });
+
+            console.log(`🏁 Game ${gameSessionId} ended`);
+
+        } catch (error) {
+            console.error('Error in endGame:', error);
+        }
+    }
+
+    public getIO(): Server | null {
+        return this.io;
     }
 }
