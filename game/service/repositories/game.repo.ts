@@ -68,7 +68,9 @@ export class GameRepository {
             if (!session) return null;
 
             session.isActive = true;
+            session.currentQuestionIndex = 0;
             session.startedAt = new Date();
+            session.timeLeft = session.timeLeft;
             session.status = GameState.IN_PROGRESS
 
             return await this.repo.save(session);

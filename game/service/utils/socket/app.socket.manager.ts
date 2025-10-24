@@ -210,14 +210,19 @@ export class SocketService {
             }
 
             // Get first question
-            const questions = game.quiz?.questions || [];
+            const questions = game.quiz?.questions;
             const firstQuestion = questions[0];
+
+            await this.playerRepo.resetAnsweredStatus(gameSessionId);
+
+            this.startQuestionTimer(gameSessionId);
 
             // Notify all players that the game is starting
             this.io?.to(gameSessionId).emit(SocketEvents.GAME_STARTED, {
                 gameSessionId,
                 currentQuestionIndex: 0,
                 question: firstQuestion,
+                timeLeft: game.timeLeft,
                 totalQuestions: questions.length
             });
 
@@ -241,7 +246,7 @@ export class SocketService {
                 return;
             }
 
-            const questions = game.quiz?.questions || [];
+            const questions = game.quiz?.questions;
             
             if (questionIndex >= questions.length) {
                 // No more questions, end the game
