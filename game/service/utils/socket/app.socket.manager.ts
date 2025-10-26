@@ -84,6 +84,15 @@ export class SocketService {
         });
     }
 
+    private broadcastGameState(gameSessionId: string, state: GameState) {
+        this.io?.to(gameSessionId).emit('game-state-changed', {
+            state,
+            gameSessionId,
+            timestamp: new Date()
+        });
+        console.log(`📡 Broadcasted state change: ${state} for game ${gameSessionId}`);
+    }
+
     private async handleJoinGame(socket: Socket, data: { gameSessionId: string; playerName: string }) {
         try {
             const { gameSessionId, playerName } = data;
@@ -93,7 +102,7 @@ export class SocketService {
                 // Just join the room, don't create player entity
                 socket.join(gameSessionId);
                 console.log(`🎮 Host joined room: ${gameSessionId}`);
-                
+
                 socket.emit(SocketEvents.JOINED_GAME, {
                     success: true,
                     message: 'Host joined successfully',
@@ -194,6 +203,7 @@ export class SocketService {
 
             // Update game state to WAITING (pre-countdown)
             await this.gameRepository.updateGameState(gameSessionId, GameState.WAITING);
+            this.broadcastGameState(gameSessionId, GameState.WAITING);
 
             // Broadcast game started event to all clients
             this.io?.to(gameSessionId).emit(SocketEvents.GAME_STARTED, {
@@ -218,6 +228,7 @@ export class SocketService {
         try {
             // Update state to COUNTDOWN
             await this.gameRepository.updateGameState(gameSessionId, GameState.COUNTDOWN);
+            this.broadcastGameState(gameSessionId, GameState.COUNTDOWN);
 
             let countdown = 3;
 
@@ -230,15 +241,15 @@ export class SocketService {
             const countdownInterval = setInterval(() => {
                 if (countdown > 0) {
                     console.log(`⏰ Countdown ${gameSessionId}: ${countdown}`);
-                    this.io?.to(gameSessionId).emit('countdown-tick', { 
+                    this.io?.to(gameSessionId).emit('countdown-tick', {
                         count: countdown,
-                        gameSessionId 
+                        gameSessionId
                     });
                     countdown--;
                 } else {
                     clearInterval(countdownInterval);
                     this.countdownTimers.delete(gameSessionId);
-                    
+
                     // Start first question
                     this.startQuestion(gameSessionId, 0);
                 }
@@ -272,6 +283,7 @@ export class SocketService {
             // Update game state
             await this.gameRepository.updateCurrentQuestion(gameSessionId, questionIndex);
             await this.gameRepository.updateGameState(gameSessionId, GameState.IN_PROGRESS);
+            this.broadcastGameState(gameSessionId, GameState.IN_PROGRESS);
 
             const questionStartTime = new Date();
 
@@ -380,13 +392,13 @@ export class SocketService {
 
             if (isCorrect) {
                 newStreak = player.currentStreak + 1;
-                
+
                 // Base points
                 pointsEarned = 100;
-                
+
                 // Streak bonus
                 pointsEarned += newStreak * 50;
-                
+
                 // Time bonus (max 50 points)
                 const timeBonusPercent = Math.max(0, (game.questionDuration - timeToAnswer) / game.questionDuration);
                 const timeBonus = Math.floor(timeBonusPercent * 50);
@@ -457,6 +469,7 @@ export class SocketService {
         try {
             // Update state
             await this.gameRepository.updateGameState(gameSessionId, GameState.RESULTS_READY);
+            this.broadcastGameState(gameSessionId, GameState.RESULTS_READY);
 
             // Get leaderboard
             const leaderboard = await this.playerRepository.getLeaderboard(gameSessionId);
@@ -482,14 +495,15 @@ export class SocketService {
 
             // Start countdown for next question
             await this.gameRepository.updateGameState(gameSessionId, GameState.COUNTDOWN);
+            this.broadcastGameState(gameSessionId, GameState.COUNTDOWN);
 
             let countdown = 3;
 
             const countdownInterval = setInterval(() => {
                 if (countdown > 0) {
-                    this.io?.to(gameSessionId).emit('countdown-tick', { 
+                    this.io?.to(gameSessionId).emit('countdown-tick', {
                         count: countdown,
-                        gameSessionId 
+                        gameSessionId
                     });
                     countdown--;
                 } else {
@@ -517,6 +531,7 @@ export class SocketService {
 
             // Update game state
             await this.gameRepository.updateGameState(gameSessionId, GameState.COMPLETED);
+            this.broadcastGameState(gameSessionId, GameState.COMPLETED);
             await this.gameRepository.endSession(gameSessionId);
 
             // Get final leaderboard
