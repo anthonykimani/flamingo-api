@@ -2,9 +2,8 @@ import dotenv from "dotenv";
 dotenv.config({ path: `.env.${process.env.NODE_ENV}` });
 
 export const allowedOrigins = [
-  "https://flamingo-web.vercel.app",
-  "https://www.flamingo-web.vercel.app",
-  "http://localhost:3000",
+  "localhost:3000",
+  "https://www.playflamingo.xyz"
 ];
 
 const corsOptions = {
