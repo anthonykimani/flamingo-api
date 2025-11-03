@@ -5,6 +5,7 @@ import { PlayerAnswerRepository } from '../../repositories/player-answer.repo';
 import { SocketEvents } from '../../enums/SocketEvents';
 import { GameState } from '../../enums/GameState';
 import { Player } from '../../models/player.entity';
+import { flamingoEscrowService } from '../contracts/flamingo.escrow';
 
 export class SocketService {
     private static instance: SocketService;
@@ -93,9 +94,9 @@ export class SocketService {
         console.log(`📡 Broadcasted state change: ${state} for game ${gameSessionId}`);
     }
 
-    private async handleJoinGame(socket: Socket, data: { gameSessionId: string; playerName: string }) {
+    private async handleJoinGame(socket: Socket, data: { gameSessionId: string; playerName: string, walletAddress?: string }) {
         try {
-            const { gameSessionId, playerName } = data;
+            const { gameSessionId, playerName, walletAddress } = data;
 
             // FIX #1: Don't add host as a player
             if (playerName === 'Host' || playerName === 'Spectator') {
@@ -118,6 +119,15 @@ export class SocketService {
                 return;
             }
 
+            //  Require wallet address for blockchain games
+        if (!walletAddress) {
+            socket.emit(SocketEvents.ERROR, { 
+                message: 'Wallet address required to join game' 
+            });
+            return;
+        }
+
+
             // Check if player already exists
             let player = await this.playerRepository.getPlayerByNameAndSession(gameSessionId, playerName);
 
@@ -125,6 +135,7 @@ export class SocketService {
                 // Create new player
                 player = new Player();
                 player.playerName = playerName;
+                player.walletAddress = walletAddress;
                 player.gameSession = { id: gameSessionId } as any;
                 player.totalScore = 0;
                 player.correctAnswers = 0;
@@ -132,10 +143,15 @@ export class SocketService {
                 player.currentStreak = 0;
                 player.bestStreak = 0;
                 player.hasAnsweredCurrent = false;
+                player.hasDeposited = false;
 
                 await this.playerRepository.savePlayer(player);
-                console.log(`👤 New player created: ${playerName}`);
+                console.log(`👤 New player created: ${playerName} (${walletAddress})`);
             } else {
+                if (player.walletAddress !== walletAddress) {
+                player.walletAddress = walletAddress;
+                await this.playerRepository.savePlayer(player);
+            }
                 console.log(`👤 Existing player rejoined: ${playerName}`);
             }
 
@@ -195,10 +211,58 @@ export class SocketService {
         try {
             const { gameSessionId } = data;
 
+            // Check if already locked
+            const isLocked = await this.gameRepository.isGameLocked(gameSessionId);
+            if (isLocked) {
+                socket.emit(SocketEvents.ERROR, { message: 'Game already locked on blockchain' });
+                return;
+            }
+
             const game = await this.gameRepository.getSessionWithDetails(gameSessionId);
             if (!game) {
                 socket.emit(SocketEvents.ERROR, { message: 'Game not found' });
                 return;
+            }
+
+            const players = await this.playerRepository.getSessionPlayers(gameSessionId);
+
+            if (players.length < 3) {
+                socket.emit(SocketEvents.ERROR, { message: "Need at least 3 Players" });
+                return;
+            }
+
+
+            const playersWithWallets = players.filter(player => player.walletAddress);
+
+            if (playersWithWallets.length !== players.length) {
+                socket.emit(SocketEvents.ERROR, {
+                    message: "All players must connect their wallets"
+                });
+                return;
+            }
+
+            try {
+                console.log(`🔒 Locking Deposits for game ${gameSessionId}...`);
+
+                const result = await flamingoEscrowService.createGameSession(
+                    gameSessionId,
+                    players.map(player => ({ walletAddress: player.walletAddress! }))
+                );
+
+                //  Use the improved method
+                await this.gameRepository.markGameLocked(
+                    gameSessionId,
+                    result.txHash
+                );
+
+
+                console.log(`✅ Deposits locked: ${result.txHash}`);
+
+            } catch (error) {
+                console.error('❌ Failed to lock deposits: ', error);
+                socket.emit(SocketEvents.ERROR, {
+                    message: `Failed to lock deposits: ${error}`
+                })
             }
 
             // Update game state to WAITING (pre-countdown)
@@ -536,6 +600,49 @@ export class SocketService {
 
             // Get final leaderboard
             const leaderboard = await this.playerRepository.getLeaderboard(gameSessionId);
+
+            // Distribute prizes if we have 3+ players
+            if (leaderboard.length >= 3) {
+                try {
+                    console.log(`🏆 Distributing prizes for game ${gameSessionId}...`);
+
+                    const winners: [string, string, string] = [
+                        leaderboard[0].walletAddress!,
+                        leaderboard[1].walletAddress!,
+                        leaderboard[2].walletAddress!
+                    ];
+
+                    // Validate winners have wallet addresses
+                    if (!winners[0] || !winners[1] || !winners[2]) {
+                        throw new Error('Winners missing wallet addresses');
+                    }
+
+                    const result = await flamingoEscrowService.distributePrizes(
+                        gameSessionId,
+                        winners
+                    );
+
+                    // Save blockchain info
+                    await this.gameRepository.markPrizesDistributed(
+                        gameSessionId,
+                        result.txHash
+                    );
+
+
+                    console.log(`✅ Prizes distributed: ${result.txHash}`);
+
+                    // Notify players about prize distribution
+                    this.io?.to(gameSessionId).emit('prizes-distributed', {
+                        txHash: result.txHash,
+                        winners: winners
+                    });
+                } catch (error) {
+                    // Continue to show results even if blockchain fails
+                    this.io?.to(gameSessionId).emit('prize-distribution-failed', {
+                        message: 'Failed to distribute prizes. Please contact support.'
+                    });
+                }
+            }
 
             // Broadcast game ended
             this.io?.to(gameSessionId).emit(SocketEvents.GAME_ENDED, {
