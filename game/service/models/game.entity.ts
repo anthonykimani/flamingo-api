@@ -64,6 +64,27 @@ export class Game extends BaseEntity {
     @Column({ default: 10 })
     questionDuration: number;
 
+    @Column({ nullable: true })
+    lockTxHash?: string;
+
+    @Column({ nullable: true })
+    distributeTxHash?: string;
+
+    @Column({ default: false })
+    isLocked: boolean;
+
+    @Column({ default: false })
+    isPaidOut: boolean;
+
+    @Column({ nullable: true, type: 'timestamp' })
+    lockedAt?: Date;
+
+    @Column({ nullable: true, type: 'timestamp' })
+    distributedAt?: Date;
+
+    @Column({ nullable: true })
+    bytes32Hash?: string;
+
     @CreateDateColumn()
     createdAt: Date;
 

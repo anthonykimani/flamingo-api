@@ -1,42 +1,47 @@
-import { BaseEntity, Column, CreateDateColumn, Entity, ManyToOne, PrimaryGeneratedColumn, UpdateDateColumn } from "typeorm";
-import { Game } from "./game.entity";
+// models/player.entity.ts
+import { Entity, PrimaryGeneratedColumn, Column, ManyToOne } from 'typeorm';
+import { Game } from './game.entity';
 
-@Entity("players")
-export class Player extends BaseEntity {
-    @PrimaryGeneratedColumn("uuid")
+@Entity('players')
+export class Player {
+    @PrimaryGeneratedColumn('uuid')
     id: string;
 
-    @Column({ length: 100 })
+    @Column()
     playerName: string;
 
-    @ManyToOne(() => Game, {
-        onDelete: "CASCADE"
-    })
+    @Column({ nullable: true })
+    walletAddress?: string;
+
+    @ManyToOne(() => Game, game => game.players)
     gameSession: Game;
 
-    @Column({ type: 'int', default: 0 })
+    @Column({ default: 0 })
     totalScore: number;
 
-    @Column({ type: 'int', default: 0 })
+    @Column({ default: 0 })
     correctAnswers: number;
 
-    @Column({ type: 'int', default: 0 })
+    @Column({ default: 0 })
     wrongAnswers: number;
 
-    @Column({ type: 'int', default: 0 })
+    @Column({ default: 0 })
     currentStreak: number;
+
+    @Column({ default: 0 })
+    bestStreak: number;
 
     @Column({ default: false })
     hasAnsweredCurrent: boolean;
 
-    @Column({ type: 'int', default: 0 })
-    bestStreak: number;
+    @Column({ default: false })
+    hasDeposited?: boolean;
 
-    @CreateDateColumn()
-    joinedAt: Date;
+    @Column({ nullable: true })
+    depositAmount?: string;
 
-    @UpdateDateColumn()
-    updatedAt: Date;
+    @Column({ nullable: true, type: 'timestamp' })
+    depositedAt?: Date;
 
     @Column({ default: false })
     deleted: boolean;

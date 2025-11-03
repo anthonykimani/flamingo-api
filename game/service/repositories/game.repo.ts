@@ -1,5 +1,6 @@
 import AppDataSource from "../configs/ormconfig";
 import { GameState } from "../enums/GameState";
+import { EscrowInfo } from "../interfaces/IEscrow";
 import { Game } from "../models/game.entity";
 
 export class GameRepository {
@@ -69,11 +70,11 @@ export class GameRepository {
 
     async startSession(id: string): Promise<Game | null> {
         try {
-            const session = await this.repo.findOne({ 
+            const session = await this.repo.findOne({
                 where: { id },
                 relations: ['quiz', 'quiz.questions', 'quiz.questions.answers']
             });
-            
+
             if (!session) return null;
 
             session.isActive = true;
@@ -93,7 +94,7 @@ export class GameRepository {
         try {
             const session = await this.repo.findOne({ where: { id } });
             if (!session) return null;
-            
+
             session.updatedAt = new Date();
             session.status = gameState;
 
@@ -163,6 +164,217 @@ export class GameRepository {
         }
     }
 
+
+    /**
+     * Update blockchain-related information for a game session
+     * @param gameSessionId - Game session UUID
+     * @param data - Blockchain data to update
+     * @returns Updated game session or null if not found
+     */
+    async updateBlockchainInfo(
+        gameSessionId: string,
+        data: EscrowInfo
+    ): Promise<Game | null> {
+        try {
+            // Find the game session first
+            const session = await this.repo.findOne({ 
+                where: { id: gameSessionId, deleted: false } 
+            });
+
+            if (!session) {
+                console.error(`Game session ${gameSessionId} not found`);
+                return null;
+            }
+
+            // Validate transaction hashes if provided
+            if (data.lockTxHash && !this.isValidTxHash(data.lockTxHash)) {
+                throw new Error(`Invalid lock transaction hash: ${data.lockTxHash}`);
+            }
+
+            if (data.distributeTxHash && !this.isValidTxHash(data.distributeTxHash)) {
+                throw new Error(`Invalid distribute transaction hash: ${data.distributeTxHash}`);
+            }
+
+            // Update only provided fields
+            if (data.lockTxHash !== undefined) session.lockTxHash = data.lockTxHash;
+            if (data.distributeTxHash !== undefined) session.distributeTxHash = data.distributeTxHash;
+            if (data.isLocked !== undefined) session.isLocked = data.isLocked;
+            if (data.isPaidOut !== undefined) session.isPaidOut = data.isPaidOut;
+            if (data.lockedAt !== undefined) session.lockedAt = data.lockedAt;
+            if (data.distributedAt !== undefined) session.distributedAt = data.distributedAt;
+            if (data.bytes32Hash !== undefined) session.bytes32Hash = data.bytes32Hash;
+
+            // Update timestamp
+            session.updatedAt = new Date();
+
+            // Save and return
+            const updated = await this.repo.save(session);
+            
+            console.log(`✅ Updated blockchain info for game ${gameSessionId}`);
+            
+            return updated;
+
+        } catch (error) {
+            console.error(`Error updating blockchain info for game ${gameSessionId}:`, error);
+            throw error;
+        }
+    }
+
+    /**
+     * Get blockchain info for a game session
+     * @param gameSessionId - Game session UUID
+     * @returns Blockchain info or null if not found
+     */
+    async getBlockchainInfo(gameSessionId: string): Promise<{
+        lockTxHash: string | null;
+        distributeTxHash: string | null;
+        isLocked: boolean;
+        isPaidOut: boolean;
+        lockedAt: Date | null;
+        distributedAt: Date | null;
+        bytes32Hash: string | null;
+    } | null> {
+        try {
+            const session = await this.repo.findOne({
+                where: { id: gameSessionId, deleted: false },
+                select: [
+                    'lockTxHash',
+                    'distributeTxHash',
+                    'isLocked',
+                    'isPaidOut',
+                    'lockedAt',
+                    'distributedAt',
+                    'bytes32Hash'
+                ]
+            });
+
+            if (!session) return null;
+
+            return {
+                lockTxHash: session.lockTxHash || null,
+                distributeTxHash: session.distributeTxHash || null,
+                isLocked: session.isLocked || false,
+                isPaidOut: session.isPaidOut || false,
+                lockedAt: session.lockedAt || null,
+                distributedAt: session.distributedAt || null,
+                bytes32Hash: session.bytes32Hash || null
+            };
+
+        } catch (error) {
+            console.error(`Error getting blockchain info for game ${gameSessionId}:`, error);
+            throw error;
+        }
+    }
+
+    /**
+     * Mark game as locked on blockchain
+     * @param gameSessionId - Game session UUID
+     * @param txHash - Transaction hash
+     * @param bytes32Hash - Optional hashed game session ID
+     * @returns Updated game session
+     */
+    async markGameLocked(
+        gameSessionId: string, 
+        txHash: string,
+        bytes32Hash?: string
+    ): Promise<Game | null> {
+        return await this.updateBlockchainInfo(gameSessionId, {
+            lockTxHash: txHash,
+            isLocked: true,
+            lockedAt: new Date(),
+            bytes32Hash
+        });
+    }
+
+    /**
+     * Mark prizes as distributed
+     * @param gameSessionId - Game session UUID
+     * @param txHash - Transaction hash
+     * @returns Updated game session
+     */
+    async markPrizesDistributed(
+        gameSessionId: string, 
+        txHash: string
+    ): Promise<Game | null> {
+        return await this.updateBlockchainInfo(gameSessionId, {
+            distributeTxHash: txHash,
+            isPaidOut: true,
+            distributedAt: new Date()
+        });
+    }
+
+    /**
+     * Check if game is locked on blockchain
+     * @param gameSessionId - Game session UUID
+     * @returns true if locked, false otherwise
+     */
+    async isGameLocked(gameSessionId: string): Promise<boolean> {
+        try {
+            const session = await this.repo.findOne({
+                where: { id: gameSessionId, deleted: false },
+                select: ['isLocked']
+            });
+
+            return session?.isLocked || false;
+
+        } catch (error) {
+            console.error(`Error checking if game is locked:`, error);
+            return false;
+        }
+    }
+
+    /**
+     * Check if prizes have been distributed
+     * @param gameSessionId - Game session UUID
+     * @returns true if paid out, false otherwise
+     */
+    async isPaidOut(gameSessionId: string): Promise<boolean> {
+        try {
+            const session = await this.repo.findOne({
+                where: { id: gameSessionId, deleted: false },
+                select: ['isPaidOut']
+            });
+
+            return session?.isPaidOut || false;
+
+        } catch (error) {
+            console.error(`Error checking if game is paid out:`, error);
+            return false;
+        }
+    }
+
+    /**
+     * Get all games that are locked but not paid out
+     * Useful for finding stuck games that need prize distribution
+     */
+    async getLockedUnpaidGames(): Promise<Game[]> {
+        try {
+            return await this.repo.find({
+                where: {
+                    isLocked: true,
+                    isPaidOut: false,
+                    deleted: false,
+                    status: GameState.COMPLETED
+                },
+                relations: ['players'],
+                order: { lockedAt: 'ASC' }
+            });
+
+        } catch (error) {
+            console.error('Error getting locked unpaid games:', error);
+            throw error;
+        }
+    }
+
+    /**
+     * Validate transaction hash format (0x followed by 64 hex characters)
+     * @param txHash - Transaction hash to validate
+     * @returns true if valid, false otherwise
+     */
+    private isValidTxHash(txHash: string): boolean {
+        return /^0x[a-fA-F0-9]{64}$/.test(txHash);
+    }
+
     /**
      * Get active sessions
      */
@@ -202,11 +414,11 @@ export class GameRepository {
         while (attempts < maxAttempts) {
             const pin = this.generateGamePin();
             const isUnique = await this.isPinUnique(pin);
-            
+
             if (isUnique) {
                 return pin;
             }
-            
+
             attempts++;
         }
 
@@ -240,7 +452,7 @@ export class GameRepository {
                 totalAnswers,
                 correctAnswers,
                 accuracy: Math.round(accuracy * 100) / 100,
-                duration: session.endedAt && session.startedAt 
+                duration: session.endedAt && session.startedAt
                     ? Math.floor((session.endedAt.getTime() - session.startedAt.getTime()) / 1000)
                     : null,
                 startedAt: session.startedAt,
@@ -352,7 +564,7 @@ export class GameRepository {
         questionDuration: number;
     } | null> {
         try {
-            const session = await this.repo.findOne({ 
+            const session = await this.repo.findOne({
                 where: { id },
                 select: ['currentQuestionIndex', 'timeLeft', 'questionStartedAt', 'questionDuration']
             });
@@ -375,7 +587,7 @@ export class GameRepository {
      */
     async isAcceptingAnswers(id: string): Promise<boolean> {
         try {
-            const session = await this.repo.findOne({ 
+            const session = await this.repo.findOne({
                 where: { id },
                 select: ['status', 'timeLeft']
             });

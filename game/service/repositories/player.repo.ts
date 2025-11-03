@@ -121,8 +121,7 @@ export class PlayerRepository {
                 where: {
                     gameSession: { id: gameSessionId },
                     deleted: false
-                },
-                order: { joinedAt: 'ASC' }
+                }
             });
         } catch (error) {
             throw error;
