@@ -40,7 +40,7 @@ export function createClients(options?: { network?: "mainnet" | "testnet" }): {
 
   const publicClient = createPublicClient({
     chain: chainId,
-    transport: webSocket(rpcUrl),
+    transport: http(),
   });
 
   const deployer = createWalletClient({
