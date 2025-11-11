@@ -2,6 +2,7 @@ import { BaseEntity, Column, CreateDateColumn, Entity, Index, ManyToOne, OneToMa
 import { PlayerAnswer } from "./player-answer.entity";
 import { Player } from "./player.entity";
 import { GameState } from "../enums/GameState";
+import { GameMode } from "../enums/GameMode";
 import { Quiz } from "./quiz.entity";
 
 @Entity("games")
@@ -18,10 +19,26 @@ export class Game extends BaseEntity {
     @Column({ length: 100, nullable: true })
     gameTitle: string;
 
-    @Column({ type: 'decimal', precision: 12, scale: 2, nullable: true })
+    @Column({
+        type: "enum",
+        enum: GameMode,
+        default: GameMode.HANGOUTS,
+    })
+    gameMode: GameMode;
+
+    @Column({ type: 'boolean', default: false })
+    hasPrizes: boolean;
+
+    @Column({ type: 'decimal', precision: 12, scale: 4, nullable: true, default: 0 })
+    prizePool: string;
+
+    @Column({ type: 'decimal', precision: 12, scale: 4, nullable: true })
     entryFee: string;
 
-    @Column({ nullable: true })
+    @Column({ default: 1 })
+    minPlayers: number;
+
+    @Column({ default: 50, nullable: true })
     maxPlayers: number;
 
     @Column({

@@ -6,6 +6,7 @@ import { SocketEvents } from '../../enums/SocketEvents';
 import { GameState } from '../../enums/GameState';
 import { Player } from '../../models/player.entity';
 import { flamingoEscrowService } from '../contracts/flamingo.escrow';
+import { GameMode } from '../../enums/GameMode';
 
 export class SocketService {
     private static instance: SocketService;
@@ -120,12 +121,12 @@ export class SocketService {
             }
 
             //  Require wallet address for blockchain games
-        if (!walletAddress) {
-            socket.emit(SocketEvents.ERROR, { 
-                message: 'Wallet address required to join game' 
-            });
-            return;
-        }
+            if (!walletAddress) {
+                socket.emit(SocketEvents.ERROR, {
+                    message: 'Wallet address required to join game'
+                });
+                return;
+            }
 
 
             // Check if player already exists
@@ -149,9 +150,9 @@ export class SocketService {
                 console.log(`👤 New player created: ${playerName} (${walletAddress})`);
             } else {
                 if (player.walletAddress !== walletAddress) {
-                player.walletAddress = walletAddress;
-                await this.playerRepository.savePlayer(player);
-            }
+                    player.walletAddress = walletAddress;
+                    await this.playerRepository.savePlayer(player);
+                }
                 console.log(`👤 Existing player rejoined: ${playerName}`);
             }
 
@@ -226,7 +227,7 @@ export class SocketService {
 
             const players = await this.playerRepository.getSessionPlayers(gameSessionId);
 
-            if (players.length < 3) {
+            if (players.length < 3 && game.gameMode == GameMode.DEGEN_PVP) {
                 socket.emit(SocketEvents.ERROR, { message: "Need at least 3 Players" });
                 return;
             }
@@ -234,35 +235,37 @@ export class SocketService {
 
             const playersWithWallets = players.filter(player => player.walletAddress);
 
-            if (playersWithWallets.length !== players.length) {
+            if (playersWithWallets.length !== players.length && game.gameMode == GameMode.DEGEN_PVP) {
                 socket.emit(SocketEvents.ERROR, {
                     message: "All players must connect their wallets"
                 });
                 return;
             }
 
-            try {
-                console.log(`🔒 Locking Deposits for game ${gameSessionId}...`);
+            if (game.gameMode == GameMode.DEGEN_PVP) {
+                try {
+                    console.log(`🔒 Locking Deposits for game ${gameSessionId}...`);
 
-                const result = await flamingoEscrowService.createGameSession(
-                    gameSessionId,
-                    players.map(player => ({ walletAddress: player.walletAddress! }))
-                );
+                    const result = await flamingoEscrowService.createGameSession(
+                        gameSessionId,
+                        players.map(player => ({ walletAddress: player.walletAddress! }))
+                    );
 
-                //  Use the improved method
-                await this.gameRepository.markGameLocked(
-                    gameSessionId,
-                    result.txHash
-                );
+                    //  Use the improved method
+                    await this.gameRepository.markGameLocked(
+                        gameSessionId,
+                        result.txHash
+                    );
 
 
-                console.log(`✅ Deposits locked: ${result.txHash}`);
+                    console.log(`✅ Deposits locked: ${result.txHash}`);
 
-            } catch (error) {
-                console.error('❌ Failed to lock deposits: ', error);
-                socket.emit(SocketEvents.ERROR, {
-                    message: `Failed to lock deposits: ${error}`
-                })
+                } catch (error) {
+                    console.error('❌ Failed to lock deposits: ', error);
+                    socket.emit(SocketEvents.ERROR, {
+                        message: `Failed to lock deposits: ${error}`
+                    })
+                }
             }
 
             // Update game state to WAITING (pre-countdown)
@@ -601,10 +604,14 @@ export class SocketService {
             // Get final leaderboard
             const leaderboard = await this.playerRepository.getLeaderboard(gameSessionId);
 
+            const game = await this.gameRepository.getSessionWithDetails(gameSessionId);
+
             // Distribute prizes if we have 3+ players
-            if (leaderboard.length >= 3) {
+            if (leaderboard.length >= 3 && game?.gameMode == GameMode.DEGEN_PVP) {
                 try {
                     console.log(`🏆 Distributing prizes for game ${gameSessionId}...`);
+
+
 
                     const winners: [string, string, string] = [
                         leaderboard[0].walletAddress!,
