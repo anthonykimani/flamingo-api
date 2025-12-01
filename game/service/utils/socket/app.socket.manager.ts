@@ -79,6 +79,10 @@ export class SocketService {
                 await this.handleSubmitAnswer(socket, data);
             });
 
+            socket.on(SocketEvents.END_GAME, async (data: { gameSessionId: string }) => {
+                await this.endGame(data.gameSessionId);
+            });
+
             // Disconnect
             socket.on(SocketEvents.DISCONNECT, () => {
                 console.log(`❌ Client disconnected: ${socket.id}`);
