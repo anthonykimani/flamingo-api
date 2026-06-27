@@ -445,6 +445,35 @@ class GameController extends Controller {
     }
 
     /**
+     * Get Active/Joinable Game Sessions
+     * @param req Request
+     * @param res Response
+     * @returns Json Object
+     */
+    public static async getActiveGames(req: Request, res: Response) {
+        try {
+            const repo = new GameRepository();
+            const sessions = await repo.getActiveSessions();
+
+            const joinable = sessions
+                .filter(s => s.status === 'waiting' || s.status === 'created')
+                .map(s => ({
+                    id: s.id,
+                    gamePin: s.gamePin,
+                    gameTitle: s.gameTitle || s.quiz?.title || 'Untitled Quiz',
+                    gameMode: s.gameMode || 'hangouts',
+                    playerCount: s.players?.length || 0,
+                    maxPlayers: s.maxPlayers,
+                    createdAt: s.createdAt
+                }));
+
+            return res.send(super.response(super._200, joinable));
+        } catch (error) {
+            return res.send(super.response(super._500, null, super.ex(error)));
+        }
+    }
+
+    /**
      * End Game Session
      * @param req Request
      * @param res Response

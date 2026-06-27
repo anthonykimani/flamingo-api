@@ -16,6 +16,7 @@ export class SocketService {
     private playerAnswerRepository: PlayerAnswerRepository;
     private gameTimers: Map<string, NodeJS.Timeout> = new Map();
     private countdownTimers: Map<string, NodeJS.Timeout> = new Map();
+    private preGameTimers: Map<string, NodeJS.Timeout> = new Map();
 
     private constructor() {
         this.gameRepository = new GameRepository();
@@ -163,14 +164,23 @@ export class SocketService {
             // Join socket room
             socket.join(gameSessionId);
 
-            // Get updated player list (excluding host)
-            const players = await this.playerRepository.getLeaderboard(gameSessionId);
+            // Auto-start if countdown not already running
+            if (!this.preGameTimers.has(gameSessionId)) {
+                console.log(`🎮 Auto-starting game ${gameSessionId} (player joined)`);
+                await this.autoStartGame(gameSessionId);
+            }
 
-            // Confirm join to the player
+            // Get updated player list (excluding host) and current game state
+            const [players, currentGame] = await Promise.all([
+                this.playerRepository.getLeaderboard(gameSessionId),
+                this.gameRepository.getSessionById(gameSessionId)
+            ]);
+
+            // Confirm join to the player with current game state
             socket.emit(SocketEvents.JOINED_GAME, {
                 success: true,
                 player: player,
-                gameState: game.status
+                gameState: currentGame?.status || game.status
             });
 
             // Notify all clients in the room about the new player
@@ -184,6 +194,36 @@ export class SocketService {
         } catch (error) {
             console.error('Error in handleJoinGame:', error);
             socket.emit(SocketEvents.ERROR, { message: 'Failed to join game' });
+        }
+    }
+
+    private async autoStartGame(gameSessionId: string) {
+        try {
+            const game = await this.gameRepository.getSessionWithDetails(gameSessionId);
+            if (!game) return;
+
+            // For Degen PvP, need at least 3 players
+            if (game.gameMode === GameMode.DEGEN_PVP) {
+                const players = await this.playerRepository.getSessionPlayers(gameSessionId);
+                if (players.length < 3) return;
+            }
+
+            // Update game state to WAITING
+            await this.gameRepository.updateGameState(gameSessionId, GameState.WAITING);
+            this.broadcastGameState(gameSessionId, GameState.WAITING);
+
+            // Broadcast game started event to all clients
+            this.io?.to(gameSessionId).emit(SocketEvents.GAME_STARTED, {
+                gameSessionId,
+                message: 'Game is starting!'
+            });
+
+            console.log(`🚀 Game ${gameSessionId} auto-started - entering pre-game countdown`);
+
+            // Start 10-second pre-game countdown
+            this.startPreGameCountdown(gameSessionId);
+        } catch (error) {
+            console.error('Error in autoStartGame:', error);
         }
     }
 
@@ -282,17 +322,45 @@ export class SocketService {
                 message: 'Game is starting!'
             });
 
-            console.log(`🚀 Game ${gameSessionId} started - entering countdown`);
+            console.log(`🚀 Game ${gameSessionId} started - entering pre-game countdown`);
 
-            // FIX #4: Wait a moment for clients to navigate, then start countdown
-            setTimeout(() => {
-                this.startCountdown(gameSessionId);
-            }, 1000);
+            // Start 10-second pre-game countdown
+            this.startPreGameCountdown(gameSessionId);
 
         } catch (error) {
             console.error('Error in handleStartGame:', error);
             socket.emit(SocketEvents.ERROR, { message: 'Failed to start game' });
         }
+    }
+
+    private startPreGameCountdown(gameSessionId: string) {
+        // Clear any existing pre-game timer
+        if (this.preGameTimers.has(gameSessionId)) {
+            clearInterval(this.preGameTimers.get(gameSessionId)!);
+        }
+
+        let countdown = 10;
+
+        const preGameInterval = setInterval(() => {
+            if (countdown > 0) {
+                console.log(`⏳ Pre-game countdown ${gameSessionId}: ${countdown}`);
+                this.io?.to(gameSessionId).emit('pre-game-countdown', {
+                    count: countdown,
+                    gameSessionId
+                });
+                countdown--;
+            } else {
+                clearInterval(preGameInterval);
+                this.preGameTimers.delete(gameSessionId);
+
+                // Proceed to in-game countdown
+                setTimeout(() => {
+                    this.startCountdown(gameSessionId);
+                }, 1000);
+            }
+        }, 1000);
+
+        this.preGameTimers.set(gameSessionId, preGameInterval);
     }
 
     private async startCountdown(gameSessionId: string) {
@@ -542,8 +610,14 @@ export class SocketService {
             await this.gameRepository.updateGameState(gameSessionId, GameState.RESULTS_READY);
             this.broadcastGameState(gameSessionId, GameState.RESULTS_READY);
 
-            // Get leaderboard
-            const leaderboard = await this.playerRepository.getLeaderboard(gameSessionId);
+            // Get leaderboard and game for total question count
+            const [leaderboard, game] = await Promise.all([
+                this.playerRepository.getLeaderboard(gameSessionId),
+                this.gameRepository.getSessionWithDetails(gameSessionId)
+            ]);
+
+            const isLastQuestion = !game?.quiz?.questions || 
+                (game.currentQuestionIndex >= game.quiz.questions.length - 1);
 
             // Broadcast results
             this.io?.to(gameSessionId).emit(SocketEvents.QUESTION_RESULTS, {
@@ -553,8 +627,43 @@ export class SocketService {
 
             console.log(`📊 Results shown for game ${gameSessionId}`);
 
+            // Auto-advance after 5 seconds
+            setTimeout(async () => {
+                if (isLastQuestion) {
+                    await this.endGame(gameSessionId);
+                } else {
+                    const nextIndex = (game?.currentQuestionIndex || 0) + 1;
+                    this.startCountdownForNext(gameSessionId, nextIndex);
+                }
+            }, 5000);
+
         } catch (error) {
             console.error('Error in showQuestionResults:', error);
+        }
+    }
+
+    private async startCountdownForNext(gameSessionId: string, questionIndex: number) {
+        try {
+            await this.gameRepository.updateGameState(gameSessionId, GameState.COUNTDOWN);
+            this.broadcastGameState(gameSessionId, GameState.COUNTDOWN);
+
+            let countdown = 3;
+
+            const countdownInterval = setInterval(() => {
+                if (countdown > 0) {
+                    this.io?.to(gameSessionId).emit('countdown-tick', {
+                        count: countdown,
+                        gameSessionId
+                    });
+                    countdown--;
+                } else {
+                    clearInterval(countdownInterval);
+                    this.startQuestion(gameSessionId, questionIndex);
+                }
+            }, 1000);
+
+        } catch (error) {
+            console.error('Error in startCountdownForNext:', error);
         }
     }
 
@@ -598,6 +707,10 @@ export class SocketService {
             if (this.countdownTimers.has(gameSessionId)) {
                 clearInterval(this.countdownTimers.get(gameSessionId)!);
                 this.countdownTimers.delete(gameSessionId);
+            }
+            if (this.preGameTimers.has(gameSessionId)) {
+                clearInterval(this.preGameTimers.get(gameSessionId)!);
+                this.preGameTimers.delete(gameSessionId);
             }
 
             // Update game state
