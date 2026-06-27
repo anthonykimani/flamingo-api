@@ -2,7 +2,8 @@ import { Quiz } from "../models/quiz.entity";
 import { QuizRepository } from "../repositories/quiz.repo";
 import Controller from "./controller";
 import { Request, Response } from "express";
-import { Agent, run, setDefaultOpenAIKey, tool } from '@openai/agents';
+import OpenAI from 'openai';
+import { Agent, run, setDefaultOpenAIClient, setOpenAIAPI, tool } from '@openai/agents';
 import { title } from "process";
 import z from "zod";
 
@@ -94,8 +95,18 @@ class QuizController extends Controller {
             const repo: QuizRepository = new QuizRepository();
             const { prompt } = req.body;
 
-            // Set OpenAI API key
-            setDefaultOpenAIKey(process.env.OPENAI_API_KEY!);
+            // Configure OpenAI SDK to point at OpenRouter
+            setDefaultOpenAIClient(new OpenAI({
+                baseURL: 'https://openrouter.ai/api/v1',
+                apiKey: process.env.OPENROUTER_API_KEY!,
+                defaultHeaders: {
+                    'HTTP-Referer': process.env.SITE_URL || 'http://localhost:3000',
+                    'X-OpenRouter-Title': process.env.SITE_NAME || 'Flamingo',
+                },
+            }));
+
+            // OpenRouter only supports Chat Completions API
+            setOpenAIAPI('chat_completions');
 
             // Validate input
             if (!prompt || typeof prompt !== 'string') {
@@ -145,6 +156,7 @@ class QuizController extends Controller {
             // Create the agent with quiz generation capabilities and output type
             const generateQuizAgent = Agent.create({
                 name: 'Quiz Generator',
+                model: 'openai/gpt-4.1',
                 instructions: `You are an expert quiz generator. Your role is to:
                 1. Analyze the user's prompt to understand the topic, difficulty, and requirements
                 2. Generate high-quality quiz questions that are clear, educational, and engaging

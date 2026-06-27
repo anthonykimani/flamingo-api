@@ -382,7 +382,7 @@ export class GameRepository {
         try {
             return await this.repo.find({
                 where: { isActive: true, deleted: false },
-                relations: ['quiz'],
+                relations: ['quiz', 'players'],
                 order: { startedAt: 'DESC' }
             });
         } catch (error) {
