@@ -125,10 +125,10 @@ export class SocketService {
                 return;
             }
 
-            //  Require wallet address for blockchain games
-            if (!walletAddress) {
+            //  Require wallet address only for blockchain (Degen PvP) games
+            if (game.gameMode === GameMode.DEGEN_PVP && !walletAddress) {
                 socket.emit(SocketEvents.ERROR, {
-                    message: 'Wallet address required to join game'
+                    message: 'Wallet address required to join Degen PvP game'
                 });
                 return;
             }
@@ -159,6 +159,13 @@ export class SocketService {
                     await this.playerRepository.savePlayer(player);
                 }
                 console.log(`👤 Existing player rejoined: ${playerName}`);
+
+                // Confirm rejoin to the player
+                socket.emit(SocketEvents.JOINED_GAME, {
+                    success: true,
+                    player: player,
+                    gameState: game.status
+                });
             }
 
             // Join socket room
@@ -339,16 +346,19 @@ export class SocketService {
             clearInterval(this.preGameTimers.get(gameSessionId)!);
         }
 
-        let countdown = 10;
+        const duration = 10;
+        const startTime = Date.now();
 
         const preGameInterval = setInterval(() => {
-            if (countdown > 0) {
-                console.log(`⏳ Pre-game countdown ${gameSessionId}: ${countdown}`);
+            const elapsed = Math.floor((Date.now() - startTime) / 1000);
+            const count = Math.max(0, duration - elapsed);
+
+            if (count > 0) {
+                console.log(`⏳ Pre-game countdown ${gameSessionId}: ${count}`);
                 this.io?.to(gameSessionId).emit('pre-game-countdown', {
-                    count: countdown,
+                    count,
                     gameSessionId
                 });
-                countdown--;
             } else {
                 clearInterval(preGameInterval);
                 this.preGameTimers.delete(gameSessionId);
@@ -358,7 +368,7 @@ export class SocketService {
                     this.startCountdown(gameSessionId);
                 }, 1000);
             }
-        }, 1000);
+        }, 250);
 
         this.preGameTimers.set(gameSessionId, preGameInterval);
     }
@@ -369,7 +379,8 @@ export class SocketService {
             await this.gameRepository.updateGameState(gameSessionId, GameState.COUNTDOWN);
             this.broadcastGameState(gameSessionId, GameState.COUNTDOWN);
 
-            let countdown = 3;
+            const duration = 3;
+            const startTime = Date.now();
 
             // Clear any existing countdown timer
             if (this.countdownTimers.has(gameSessionId)) {
@@ -378,13 +389,15 @@ export class SocketService {
 
             // Broadcast countdown
             const countdownInterval = setInterval(() => {
-                if (countdown > 0) {
-                    console.log(`⏰ Countdown ${gameSessionId}: ${countdown}`);
+                const elapsed = Math.floor((Date.now() - startTime) / 1000);
+                const count = Math.max(0, duration - elapsed);
+
+                if (count > 0) {
+                    console.log(`⏰ Countdown ${gameSessionId}: ${count}`);
                     this.io?.to(gameSessionId).emit('countdown-tick', {
-                        count: countdown,
+                        count: count,
                         gameSessionId
                     });
-                    countdown--;
                 } else {
                     clearInterval(countdownInterval);
                     this.countdownTimers.delete(gameSessionId);
@@ -392,7 +405,7 @@ export class SocketService {
                     // Start first question
                     this.startQuestion(gameSessionId, 0);
                 }
-            }, 1000);
+            }, 250);
 
             this.countdownTimers.set(gameSessionId, countdownInterval);
 
@@ -456,10 +469,11 @@ export class SocketService {
             clearInterval(this.gameTimers.get(gameSessionId)!);
         }
 
-        let timeLeft = duration;
+        const startTime = Date.now();
 
         const timerInterval = setInterval(async () => {
-            timeLeft--;
+            const elapsed = Math.floor((Date.now() - startTime) / 1000);
+            const timeLeft = Math.max(0, duration - elapsed);
 
             // Broadcast time update
             this.io?.to(gameSessionId).emit('time-update', {
@@ -474,7 +488,7 @@ export class SocketService {
                 // Question timeout - show results
                 await this.showQuestionResults(gameSessionId);
             }
-        }, 1000);
+        }, 250);
 
         this.gameTimers.set(gameSessionId, timerInterval);
     }
@@ -647,20 +661,23 @@ export class SocketService {
             await this.gameRepository.updateGameState(gameSessionId, GameState.COUNTDOWN);
             this.broadcastGameState(gameSessionId, GameState.COUNTDOWN);
 
-            let countdown = 3;
+            const duration = 3;
+            const startTime = Date.now();
 
             const countdownInterval = setInterval(() => {
-                if (countdown > 0) {
+                const elapsed = Math.floor((Date.now() - startTime) / 1000);
+                const count = Math.max(0, duration - elapsed);
+
+                if (count > 0) {
                     this.io?.to(gameSessionId).emit('countdown-tick', {
-                        count: countdown,
+                        count: count,
                         gameSessionId
                     });
-                    countdown--;
                 } else {
                     clearInterval(countdownInterval);
                     this.startQuestion(gameSessionId, questionIndex);
                 }
-            }, 1000);
+            }, 250);
 
         } catch (error) {
             console.error('Error in startCountdownForNext:', error);
@@ -677,20 +694,23 @@ export class SocketService {
             await this.gameRepository.updateGameState(gameSessionId, GameState.COUNTDOWN);
             this.broadcastGameState(gameSessionId, GameState.COUNTDOWN);
 
-            let countdown = 3;
+            const duration = 3;
+            const startTime = Date.now();
 
             const countdownInterval = setInterval(() => {
-                if (countdown > 0) {
+                const elapsed = Math.floor((Date.now() - startTime) / 1000);
+                const count = Math.max(0, duration - elapsed);
+
+                if (count > 0) {
                     this.io?.to(gameSessionId).emit('countdown-tick', {
-                        count: countdown,
+                        count: count,
                         gameSessionId
                     });
-                    countdown--;
                 } else {
                     clearInterval(countdownInterval);
                     this.startQuestion(gameSessionId, questionIndex);
                 }
-            }, 1000);
+            }, 250);
 
         } catch (error) {
             console.error('Error in handleNextQuestion:', error);
