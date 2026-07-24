@@ -42,6 +42,7 @@ class Controller {
   protected static _403 = { code: 403, message: "Forbidden" };
   protected static _404 = { code: 404, message: "Not Found" };
   protected static _408 = { code: 408, message: "Request Timeout" };
+  protected static _409 = { code: 409, message: "Conflict" };
   protected static _429 = { code: 429, message: "Too Many Requests" };
   protected static _500 = { code: 500, message: "Internal Server Error" };
   protected static _503 = { code: 503, message: "Service Unavailable" };

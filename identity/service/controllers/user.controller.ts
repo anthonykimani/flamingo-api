@@ -3,6 +3,7 @@ import { User } from "../models/user.entity";
 import { UserRepository } from "../repositories/user.repo";
 import Validator from "../utils/validators/validator";
 import Controller from "./controller";
+import { sanitizeUser, sanitizeUsers } from "../utils/shared/sanitize";
 
 class UserController extends Controller {
   /**
@@ -17,7 +18,7 @@ class UserController extends Controller {
       let userData = await repo.getAll(req.body);
 
       if (userData) {
-        return res.send(super.response(super._200, userData));
+        return res.send(super.response(super._200, sanitizeUsers(userData)));
       } else {
         return res.send(
           super.response(super._404, userData, [super._404.message])
@@ -41,7 +42,7 @@ class UserController extends Controller {
 
       let userData = await repo.getUserById(id);
       if (userData) {
-        return res.send(super.response(super._200, userData));
+        return res.send(super.response(super._200, sanitizeUser(userData)));
       } else {
         return res.send(super.response(super._404, null, [super._404.message]));
       }
@@ -121,9 +122,9 @@ class UserController extends Controller {
       if (isValid.length == 0) {
         let userData = await repo.saveUser(user);
 
-        return res.send(super.response(super._200, userData));
+        return res.send(super.response(super._200, sanitizeUser(userData ?? null)));
       } else {
-        super.response(super._400, null, isValid);
+        return res.send(super.response(super._400, null, isValid));
       }
     } catch (error) {
       return res.send(super.response(super._500, null, super.ex(error)));

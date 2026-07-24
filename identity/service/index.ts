@@ -6,6 +6,7 @@ import corsOptions from "./configs/corsconfig";
 import AppDataSource from "./configs/ormconfig";
 
 import usersRoutes from "./routes/index.users";
+import authRoutes from "./routes/index.auth";
 
 export const app = express();
 export const server = http.createServer(app);
@@ -16,6 +17,7 @@ app.enable("trust proxy");
 app.use(cors(corsOptions));
 app.use(express.json());
 app.use("/users", usersRoutes);
+app.use("/auth", authRoutes);
 
 AppDataSource.initialize()
   .then(() => {

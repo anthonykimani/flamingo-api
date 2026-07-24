@@ -19,7 +19,8 @@
     "luxon": "^3.6.0",
     "pg": "^8.14.1",
     "reflect-metadata": "^0.2.2",
-    "typeorm": "^0.3.21"
+    "typeorm": "^0.3.21",
+    "viem": "^2.55.4"
   },
   "devDependencies": {
     "@types/bcrypt": "^5.0.2",

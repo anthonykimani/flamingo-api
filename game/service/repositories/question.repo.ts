@@ -42,25 +42,30 @@ export class QuestionRepository {
         question?: Question,
         skip?: number,
         take?: number
-    ) {
+    ): Promise<Question[]> {
         try {
-            let questionData: Question[] = [];
+            const hasFilter = question && (question.id || question.question || question.quiz);
 
-            if(!questionData || Object.keys(questionData).length === 0) {
-                questionData = await this.repo.find({
+            if (hasFilter) {
+                return await this.repo.find({
                     where: [
-                        { id: question?.id },
-                        { quiz: question?.quiz },
-                        { question: question?.question }
-                    ],
+                        { id: question.id },
+                        { question: question.question },
+                        { quiz: question.quiz }
+                    ].filter(Boolean),
                     relations: ['answers', 'quiz'],
-                    order: {
-                        createdAt: "DESC"
-                    }
-                })
+                    order: { createdAt: "DESC" },
+                    skip: skip || 0,
+                    take: take || 20
+                });
             }
 
-            return questionData;
+            return await this.repo.find({
+                relations: ['answers', 'quiz'],
+                order: { createdAt: "DESC" },
+                skip: skip || 0,
+                take: take || 20
+            });
         } catch (error) {
            throw error 
         }

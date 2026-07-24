@@ -13,6 +13,11 @@ export class Game extends BaseEntity {
     @Column({ length: 10, unique: true })
     gamePin: string;
 
+    /** Wallet address of the session creator — the only principal allowed to manage the game */
+    @Column({ length: 100, nullable: true })
+    @Index()
+    hostAddress?: string;
+
     @ManyToOne(() => Quiz, (quiz: Quiz) => quiz.games)
     quiz: Quiz;
 
@@ -46,6 +51,7 @@ export class Game extends BaseEntity {
         enum: GameState,
         default: GameState.CREATED,
     })
+    @Index()
     status: GameState;
 
     @Column({ type: 'boolean', default: true })

@@ -13,7 +13,7 @@ class Validator {
    * @param user User
    * @returns Array
    */
-  public static isValidUser(user: User): [] {
+  public static isValidUser(user: User): string[] {
     try {
       this.errors = [];
       let _onboardTypes = [OnboardType.NEW];
@@ -35,7 +35,8 @@ class Validator {
 
       return this.errors;
     } catch (error) {
-      return [];
+      // Fail closed: a validation error must never mean "valid".
+      return ["Validation failed"];
     }
   }
 
