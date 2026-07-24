@@ -43,12 +43,6 @@ export class UserRepository {
         user.emailConfirmed = false;
         user.role = UserRole.PLAYER;
         user.username = user.username;
-        user.password = user.password
-          ? await this.hashPassword(user.password, this.config.saltRounds)
-          : await this.hashPassword(
-              Format.getCurrentTimestamp() + "",
-              this.config.saltRounds
-            );
 
         user.regKey = Jwt.sign({ id: user.email }, this.config.secret);
         user.registered = false;
@@ -60,9 +54,11 @@ export class UserRepository {
         user.updateType = "NEW_ACCOUNT";
         user.deleted = false;
         //address object
+        user.account = user.account || {};
         user.account.address = user.address;
 
         //profile object
+        user.profile = user.profile || {};
         user.profile.shareAnalytics = true;
         user.profile.viewAddressInfo = false;
         if (
@@ -76,6 +72,18 @@ export class UserRepository {
           ? user.profile.notifications
           : [];
         user.profile.imgPath = "";
+      }
+
+      // Always store passwords hashed — on every save path, not just creation.
+      // A value already bcrypt-hashed is left untouched so updates that
+      // round-trip the stored hash don't double-hash it.
+      if (user.password && !this.isBcryptHash(user.password)) {
+        user.password = await this.hashPassword(user.password, this.config.saltRounds);
+      } else if (!user.password) {
+        user.password = await this.hashPassword(
+          Format.getCurrentTimestamp() + "",
+          this.config.saltRounds
+        );
       }
 
       user.email = user.email.toLowerCase();
@@ -105,28 +113,24 @@ export class UserRepository {
     try {
       let userData: User[] = [];
 
-      if (!user || Object.keys(user).length === 0) {
-        userData = await this.repo.find({
-          where: {
-            deleted: false,
-          },
-        });
-      } else {
-        userData = await this.repo.find({
-          where: [
-            { deleted: false },
-            { id: user.id },
-            { email: user.email },
-            { firstname: user.firstname },
-            { lastname: user.lastname },
-            { address: user.address },
-          ],
-          order: {
-            created: "DESC",
-          },
-        });
+      // AND semantics: every supplied filter must match. (An array `where`
+      // would OR the conditions and leak the full user table.)
+      const where: Record<string, any> = { deleted: false };
+      if (user) {
+        if (user.id) where.id = user.id;
+        if (user.email) where.email = user.email;
+        if (user.firstname) where.firstname = user.firstname;
+        if (user.lastname) where.lastname = user.lastname;
+        if (user.address) where.address = user.address;
       }
-      
+
+      userData = await this.repo.find({
+        where,
+        order: {
+          created: "DESC",
+        },
+      });
+
       return userData;
     } catch (error) {
       if (error instanceof Error) {
@@ -161,6 +165,29 @@ export class UserRepository {
   }
 
   /**
+   * Get a User by wallet address
+   * @param address Wallet address
+   * @returns User | null
+   */
+  async getUserByAddress(address: string): Promise<User | null> {
+    try {
+      if (!address) return null;
+
+      let userData = await this.repo.find({
+        where: { address },
+        take: 1,
+      });
+      return userData && userData.length > 0 ? userData[0] : null;
+    } catch (error) {
+      if (error instanceof Error) {
+        throw error;
+      } else {
+        throw error;
+      }
+    }
+  }
+
+  /**
    * Hash password
    * @param password plain text password
    * @param saltRounds Ecryption levels
@@ -179,5 +206,20 @@ export class UserRepository {
         throw error;
       }
     }
+  }
+
+  /**
+   * Compare a plain-text password against a stored bcrypt hash
+   * @param password plain text password
+   * @param hash stored bcrypt hash
+   * @returns boolean
+   */
+  async comparePassword(password: string, hash: string): Promise<boolean> {
+    if (!password || !hash || !this.isBcryptHash(hash)) return false;
+    return bcrypt.compare(password, hash);
+  }
+
+  private isBcryptHash(value: string): boolean {
+    return /^\$2[aby]\$\d{2}\$/.test(value);
   }
 }

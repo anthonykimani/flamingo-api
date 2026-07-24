@@ -1,7 +1,7 @@
 import dotenv from "dotenv";
-import { join } from "path";
 import { DataSource } from "typeorm";
 import { User } from "../models/user.entity";
+import { AuthNonce } from "../models/nonce.entity";
 
 dotenv.config({ path: `.env.${process.env.NODE_ENV}` });
 
@@ -17,25 +17,20 @@ const config = {
 const AppDataSource = new DataSource({
     type: "postgres",
     host: config.host,
-    port: 5432,
+    port: Number(config.port) || 5432,
     username: config.user,
     password: config.password,
     database: config.database,
     ssl: config.ssl ? {
         rejectUnauthorized: false,
-        //ca: "",
-        //key: "",
-        //cert: "",
     } : config.ssl,
     entities: [
-        User
+        User,
+        AuthNonce
     ],
     synchronize: true,
     dropSchema: false,
-    migrationsRun: true,
     logging: false,
-    logger: "debug",
-    migrations: [join(__dirname, "service/migration/**/*.ts")]
 });
 
 export = AppDataSource;

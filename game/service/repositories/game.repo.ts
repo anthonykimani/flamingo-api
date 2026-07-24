@@ -1,14 +1,22 @@
 import AppDataSource from "../configs/ormconfig";
 import { GameState } from "../enums/GameState";
+import { GameMode } from "../enums/GameMode";
 import { EscrowInfo } from "../interfaces/IEscrow";
 import { Game } from "../models/game.entity";
 
 export class GameRepository {
     private repo = AppDataSource.getRepository(Game);
 
-    async createSession(quizId: string, questionDuration: number = 10): Promise<Game> {
+    async createSession(
+        quizId: string,
+        questionDuration: number = 10,
+        gameMode?: GameMode,
+        hasPrizes?: boolean,
+        entryFee?: string,
+        hostAddress?: string
+    ): Promise<Game> {
         try {
-            const gamePin = this.generateGamePin();
+            const gamePin = await this.generateUniqueGamePin();
 
             const session = this.repo.create({
                 gamePin,
@@ -18,7 +26,11 @@ export class GameRepository {
                 currentQuestionIndex: 0,
                 questionDuration: questionDuration,
                 timeLeft: questionDuration,
-                status: GameState.WAITING
+                status: GameState.WAITING,
+                ...(gameMode !== undefined && { gameMode }),
+                ...(hasPrizes !== undefined && { hasPrizes }),
+                ...(entryFee !== undefined && { entryFee }),
+                ...(hostAddress !== undefined && { hostAddress })
             });
 
             return await this.repo.save(session);
@@ -64,7 +76,7 @@ export class GameRepository {
         }
     }
 
-    private generateGamePin(): string {
+    static generateGamePin(): string {
         return Math.floor(100000 + Math.random() * 900000).toString();
     }
 
@@ -187,11 +199,11 @@ export class GameRepository {
             }
 
             // Validate transaction hashes if provided
-            if (data.lockTxHash && !this.isValidTxHash(data.lockTxHash)) {
+            if (data.lockTxHash && !GameRepository.isValidTxHash(data.lockTxHash)) {
                 throw new Error(`Invalid lock transaction hash: ${data.lockTxHash}`);
             }
 
-            if (data.distributeTxHash && !this.isValidTxHash(data.distributeTxHash)) {
+            if (data.distributeTxHash && !GameRepository.isValidTxHash(data.distributeTxHash)) {
                 throw new Error(`Invalid distribute transaction hash: ${data.distributeTxHash}`);
             }
 
@@ -371,7 +383,7 @@ export class GameRepository {
      * @param txHash - Transaction hash to validate
      * @returns true if valid, false otherwise
      */
-    private isValidTxHash(txHash: string): boolean {
+    static isValidTxHash(txHash: string): boolean {
         return /^0x[a-fA-F0-9]{64}$/.test(txHash);
     }
 
@@ -412,7 +424,7 @@ export class GameRepository {
         const maxAttempts = 10;
 
         while (attempts < maxAttempts) {
-            const pin = this.generateGamePin();
+            const pin = GameRepository.generateGamePin();
             const isUnique = await this.isPinUnique(pin);
 
             if (isUnique) {

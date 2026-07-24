@@ -4,7 +4,6 @@ import Controller from "./controller";
 import { Request, Response } from "express";
 import OpenAI from 'openai';
 import { Agent, run, setDefaultOpenAIClient, setOpenAIAPI, tool } from '@openai/agents';
-import { title } from "process";
 import z from "zod";
 
 
@@ -100,10 +99,12 @@ class QuizController extends Controller {
                 baseURL: 'https://openrouter.ai/api/v1',
                 apiKey: process.env.OPENROUTER_API_KEY!,
                 defaultHeaders: {
-                    'HTTP-Referer': process.env.SITE_URL || 'http://localhost:3000',
-                    'X-OpenRouter-Title': process.env.SITE_NAME || 'Flamingo',
+                    'HTTP-Referer': process.env.SITE_URL || '',
+                    'X-OpenRouter-Title': process.env.SITE_NAME || '',
                 },
-            }));
+            // The agents SDK bundles its own openai build — the structural
+            // types differ but the runtime client is compatible.
+            }) as any);
 
             // OpenRouter only supports Chat Completions API
             setOpenAIAPI('chat_completions');

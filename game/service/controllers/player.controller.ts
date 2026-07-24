@@ -1,6 +1,7 @@
 import { Player } from "../models/player.entity";
 import { PlayerAnswerRepository } from "../repositories/player-answer.repo";
 import { PlayerRepository } from "../repositories/player.repo";
+import { GameRepository } from "../repositories/game.repo";
 
 import Controller from "./controller";
 import { Request, Response } from "express";
@@ -63,20 +64,19 @@ class PlayerController extends Controller {
     public static async add(req: Request, res: Response) {
         try {
             const repo: PlayerRepository = new PlayerRepository();
-            const {
-                playerName,
-                gameSessionId,
-                playerId
-            } = req.body;
+
+            // Guest tokens pin the identity; wallet users may choose a name.
+            // Client-supplied player IDs are NEVER accepted — the server generates them.
+            const playerName = req.guest ? req.guest.playerName : req.body.playerName;
+            const gameSessionId = req.guest ? req.guest.gameSessionId : req.body.gameSessionId;
 
             // Validate required fields
             if (!playerName || !gameSessionId) {
                 return res.send(super.response(super._400, null, ['Player name and game session ID are required']));
             }
 
-            
             const existingPlayer = await repo.getPlayerByNameAndSession(gameSessionId, playerName);
-            
+
             if (existingPlayer) {
                 return res.send(super.response(super._400, null, ['Player already joined this game']));
             }
@@ -84,7 +84,7 @@ class PlayerController extends Controller {
             let player = new Player();
             player.playerName = playerName;
             player.gameSession = { id: gameSessionId } as any;
-            if (playerId) player.id = playerId;
+            if (req.user?.address) player.walletAddress = req.user.address.toLowerCase();
             player.totalScore = 0;
             player.correctAnswers = 0;
             player.wrongAnswers = 0;
@@ -247,10 +247,27 @@ class PlayerController extends Controller {
     public static async removePlayer(req: Request, res: Response) {
         try {
             const repo: PlayerRepository = new PlayerRepository();
+            const gameRepo: GameRepository = new GameRepository();
             const { gameSessionId, playerName } = req.params;
 
             if (!gameSessionId || !playerName) {
                 return res.send(super.response(super._400, null, ['Game session ID and player name are required']));
+            }
+
+            const session = await gameRepo.getSessionById(gameSessionId);
+            if (!session) {
+                return res.send(super.response(super._404, null, ['Game session not found']));
+            }
+
+            const caller = req.user?.address?.toLowerCase();
+            const isHost = !!session.hostAddress && session.hostAddress.toLowerCase() === caller;
+
+            // The host may kick anyone; a wallet player may only remove themselves
+            if (!isHost) {
+                const target = await repo.getPlayerByNameAndSession(gameSessionId, playerName);
+                if (!target?.walletAddress || target.walletAddress.toLowerCase() !== caller) {
+                    return res.send(super.response(super._403, null, ['Not allowed to remove this player']));
+                }
             }
 
             const removed = await repo.removePlayer(gameSessionId, playerName);

@@ -1,15 +1,6 @@
-import { baseSepolia } from "viem/chains";
-import { createClients } from "../shared/helpers";
+import { createClients, getChainConfig } from "../shared/helpers";
 import { Address, encodeAbiParameters, erc20Abi, getContract, Hex, keccak256, stringToHex } from "viem";
 import { flamingoEscrowABI } from "../abi/flamingo-escrow";
-import * as dotenv from "dotenv";
-
-dotenv.config({ path: `.env.${process.env.NODE_ENV}` });
-
-const {
-    FLAMINGO_ESCROW_ADDRESS,
-    USDC_ADDRESS
-} = process.env
 
 export class FlamingoEscrowService {
     private publicClient;
@@ -29,13 +20,7 @@ export class FlamingoEscrowService {
         this.account = account;
         this.chain = chainId;
 
-        const flamingoEscrowAddress = FLAMINGO_ESCROW_ADDRESS;
-        const usdcAddress = USDC_ADDRESS;
-
-
-        if (!flamingoEscrowAddress || !usdcAddress) {
-            throw new Error("Missing contract addresses in environment");
-        }
+        const { escrowAddress: flamingoEscrowAddress, usdcAddress } = getChainConfig();
 
         this.flamingoEscrowAddress = flamingoEscrowAddress as Address;
 

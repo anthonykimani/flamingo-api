@@ -1,9 +1,11 @@
-import { BaseEntity, Column, CreateDateColumn, Entity, ManyToOne, PrimaryGeneratedColumn } from "typeorm";
+import { BaseEntity, Column, CreateDateColumn, Entity, Index, ManyToOne, PrimaryGeneratedColumn, Unique } from "typeorm";
 import { Game } from "./game.entity";
 import { Question } from "./question.entity";
 import { Answer } from "./answer.entity";
 
 @Entity("player_answers")
+@Unique("UQ_player_answer_once", ["gameSession", "playerName", "question"])
+@Index("IDX_player_answers_session_name", ["gameSession", "playerName"])
 export class PlayerAnswer extends BaseEntity {
     @PrimaryGeneratedColumn("uuid")
     id: string;

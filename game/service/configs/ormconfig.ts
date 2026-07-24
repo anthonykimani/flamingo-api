@@ -22,7 +22,7 @@ const config = {
 const AppDataSource = new DataSource({
     type: "postgres",
     host: config.host,
-    port: 5432,
+    port: Number(config.port),
     username: config.user,
     password: config.password,
     database: config.database,

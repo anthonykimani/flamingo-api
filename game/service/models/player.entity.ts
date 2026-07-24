@@ -1,8 +1,9 @@
 // models/player.entity.ts
-import { Entity, PrimaryGeneratedColumn, Column, ManyToOne } from 'typeorm';
+import { Entity, PrimaryGeneratedColumn, Column, ManyToOne, Index } from 'typeorm';
 import { Game } from './game.entity';
 
 @Entity('players')
+@Index('IDX_players_session_name', ['gameSession', 'playerName'])
 export class Player {
     @PrimaryGeneratedColumn('uuid')
     id: string;

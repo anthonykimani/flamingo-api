@@ -2,7 +2,7 @@ import dotenv from "dotenv";
 dotenv.config({ path: `.env.${process.env.NODE_ENV}` });
 
 export const allowedOrigins = [
-  "localhost:3000",
+  "http://localhost:3000",
   "http://localhost:3001",
   "https://www.playflamingo.xyz"
 ];

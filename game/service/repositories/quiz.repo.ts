@@ -42,31 +42,27 @@ export class QuizRepository {
         quiz?: Quiz,
         skip?: number,
         take?: number
-    ) {
+    ): Promise<Quiz[]> {
         try {
-            let quizData: Quiz[] = [];
+            const hasFilter = quiz && (quiz.id || quiz.title || quiz.isPublished !== undefined);
 
-            if(!quizData || Object.keys(quizData).length === 0) {
-                quizData = await this.repo.find({
-                    where: {
-                        isPublished: true
-                    },
-                    relations: ['questions', 'games']
-                })
-            } else {
-                quizData = await this.repo.find({
+            if (hasFilter) {
+                return await this.repo.find({
                     where: [
-                        { id: quiz?.id },
-                        { title: quiz?.title },
-                        { isPublished: quiz?.isPublished }
-                    ],
-                    order: {
-                        createdAt: "DESC"
-                    }
-                })
+                        { id: quiz.id },
+                        { title: quiz.title },
+                        { isPublished: quiz.isPublished }
+                    ].filter(Boolean),
+                    relations: ['questions', 'games'],
+                    order: { createdAt: "DESC" }
+                });
             }
 
-            return quizData && quizData.length > 0 ? quizData[0] : null;
+            return await this.repo.find({
+                where: { isPublished: true },
+                relations: ['questions', 'games'],
+                order: { createdAt: "DESC" }
+            });
         } catch (error) {
             throw error
         }

@@ -1,12 +1,19 @@
-import AppDataSource from "../configs/ormconfig";
-import { GameState } from "../enums/GameState";
-import { Game } from "../models/game.entity";
-import { Quiz } from "../models/quiz.entity";
 import { GameRepository } from "../repositories/game.repo";
 import { PlayerAnswerRepository } from "../repositories/player-answer.repo";
 import { PlayerRepository } from "../repositories/player.repo";
+import { Player } from "../models/player.entity";
+import { GameMode } from "../enums/GameMode";
 import Controller from "./controller";
 import { Request, Response } from "express";
+import { signGuestToken } from "../utils/tokens";
+import { submitAnswerForPlayer } from "../utils/gameplay";
+
+const RESERVED_NAMES = ["host", "spectator"];
+
+/** True when the authenticated wallet owns this game session */
+function isHost(session: { hostAddress?: string }, address?: string): boolean {
+    return !!session.hostAddress && !!address && session.hostAddress.toLowerCase() === address.toLowerCase();
+}
 
 class GameController extends Controller {
     /**
@@ -18,13 +25,18 @@ class GameController extends Controller {
     public static async createSession(req: Request, res: Response) {
         try {
             const repo = new GameRepository();
-            const { quizId } = req.body;
+            const { quizId, gameMode, hasPrizes, entryFee } = req.body;
 
             if (!quizId) {
                 return res.send(super.response(super._400, null, ['Quiz ID is required']));
             }
 
-            const session = await repo.createSession(quizId);
+            const hostAddress = req.user?.address?.toLowerCase();
+            if (!hostAddress) {
+                return res.send(super.response(super._401, null, ['Authenticated wallet required to create a game']));
+            }
+
+            const session = await repo.createSession(quizId, 10, gameMode, hasPrizes, entryFee, hostAddress);
 
             return res.send(super.response(super._200, session));
         } catch (error) {
@@ -88,7 +100,8 @@ class GameController extends Controller {
     }
 
     /**
-     * Join Game by PIN
+     * Join Game by PIN — creates the player server-side and issues a
+     * short-lived guest token binding the caller to that player identity.
      * @param req Request
      * @param res Response
      * @returns Json Object
@@ -96,10 +109,21 @@ class GameController extends Controller {
     public static async joinGame(req: Request, res: Response) {
         try {
             const repo = new GameRepository();
-            const { gamePin } = req.body;
+            const playerRepo = new PlayerRepository();
+            const { gamePin, playerName, walletAddress } = req.body;
 
             if (!gamePin) {
                 return res.send(super.response(super._400, null, ['Game PIN is required']));
+            }
+
+            if (!playerName || typeof playerName !== "string" || playerName.trim().length < 2 || playerName.trim().length > 20) {
+                return res.send(super.response(super._400, null, ['Player name must be 2-20 characters']));
+            }
+
+            const trimmedName = playerName.trim();
+
+            if (RESERVED_NAMES.includes(trimmedName.toLowerCase())) {
+                return res.send(super.response(super._400, null, ['That name is reserved']));
             }
 
             const session = await repo.getSessionByPin(gamePin);
@@ -112,7 +136,45 @@ class GameController extends Controller {
                 return res.send(super.response(super._400, null, ['Game is no longer active']));
             }
 
-            return res.send(super.response(super._200, session));
+            // Degen PvP games stake real deposits — a wallet is mandatory
+            if (session.gameMode === GameMode.DEGEN_PVP && !walletAddress) {
+                return res.send(super.response(super._400, null, ['Wallet address required to join this game']));
+            }
+
+            const normalizedWallet = typeof walletAddress === "string" && walletAddress
+                ? walletAddress.toLowerCase()
+                : undefined;
+
+            let player = await playerRepo.getPlayerByNameAndSession(session.id, trimmedName);
+
+            if (player) {
+                // Rejoin: a wallet-bound identity can only be reclaimed by the same wallet
+                if (player.walletAddress && player.walletAddress.toLowerCase() !== normalizedWallet) {
+                    return res.send(super.response(super._409, null, ['That name is taken in this game']));
+                }
+            } else {
+                player = new Player();
+                player.playerName = trimmedName;
+                player.walletAddress = normalizedWallet;
+                player.gameSession = { id: session.id } as any;
+                player.totalScore = 0;
+                player.correctAnswers = 0;
+                player.wrongAnswers = 0;
+                player.currentStreak = 0;
+                player.bestStreak = 0;
+                player.hasAnsweredCurrent = false;
+                player.hasDeposited = false;
+
+                player = await playerRepo.savePlayer(player);
+            }
+
+            const token = signGuestToken({
+                playerId: player.id,
+                playerName: player.playerName,
+                gameSessionId: session.id,
+            });
+
+            return res.send(super.response(super._200, { session, player, token }));
         } catch (error) {
             return res.send(super.response(super._500, null, super.ex(error)));
         }
@@ -136,6 +198,15 @@ class GameController extends Controller {
 
             if (!gameState) {
                 return res.send(super.response(super._400, null, ['Game state is required']))
+            }
+
+            const existing = await repo.getSessionById(gameSessionId);
+            if (!existing) {
+                return res.send(super.response(super._404, null, ['Game session not found']));
+            }
+
+            if (!isHost(existing, req.user?.address)) {
+                return res.send(super.response(super._403, null, ['Only the game host can start this game']));
             }
 
             const session = await repo.startSession(gameSessionId);
@@ -170,6 +241,15 @@ class GameController extends Controller {
                 return res.send(super.response(super._400, null, ['Game state is required']))
             }
 
+            const existing = await repo.getSessionById(gameSessionId);
+            if (!existing) {
+                return res.send(super.response(super._404, null, ['Game session not found']));
+            }
+
+            if (!isHost(existing, req.user?.address)) {
+                return res.send(super.response(super._403, null, ['Only the game host can update this game']));
+            }
+
             const updateGameSession = await repo.updateSession(gameSessionId, gameState);
 
             return res.send(super.response(super._200, updateGameSession));
@@ -186,69 +266,44 @@ class GameController extends Controller {
      */
     public static async submitAnswer(req: Request, res: Response) {
         try {
-            const answerRepo = new PlayerAnswerRepository();
-            const playerRepo = new PlayerRepository();
+            // Guest tokens pin the identity — clients cannot claim another player's name
+            const gameSessionId = req.guest ? req.guest.gameSessionId : req.body.gameSessionId;
+            const playerName = req.guest ? req.guest.playerName : req.body.playerName;
 
-            const {
-                gameSessionId,
-                playerName,
-                questionId,
-                answerId,
-                isCorrect,
-                pointsEarned,
-                answerStreak,
-                timeToAnswer
-            } = req.body;
+            const { questionId, answerId, timeToAnswer } = req.body;
 
-            // Validate required fields
             if (!gameSessionId || !playerName || !questionId || !answerId) {
                 return res.send(super.response(super._400, null, ['Missing required fields']));
             }
 
-            // FIX: Use correct method name - getPlayerQuestionAnswer
-            const existingAnswer = await answerRepo.getPlayerQuestionAnswer(
-                gameSessionId,
-                playerName,
-                questionId
-            );
-
-            if (existingAnswer) {
-                return res.send(super.response(super._400, null, ['You have already answered this question']));
+            // Wallet path: the caller may only answer as a player bound to
+            // their own wallet (prevents hijacking another player's score).
+            if (!req.guest && req.user?.address) {
+                const playerRepo = new PlayerRepository();
+                const claimed = await playerRepo.getPlayerByNameAndSession(gameSessionId, playerName);
+                if (claimed?.walletAddress && claimed.walletAddress.toLowerCase() !== req.user.address.toLowerCase()) {
+                    return res.send(super.response(super._403, null, ['That player is bound to a different wallet']));
+                }
             }
 
-            // FIX: Use correct parameter format - plain object, not relation objects
-            const playerAnswer = await answerRepo.saveAnswer({
+            const result = await submitAnswerForPlayer({
                 gameSessionId,
                 playerName,
                 questionId,
                 answerId,
-                isCorrect,
-                pointsEarned: pointsEarned || 0,
-                answerStreak: answerStreak || 0,
                 timeToAnswer: timeToAnswer || 0
             });
 
-            // Update player stats
-            const player = await playerRepo.getPlayerByNameAndSession(gameSessionId, playerName);
-
-            if (player) {
-                player.totalScore = (player.totalScore || 0) + (pointsEarned || 0);
-                
-                if (isCorrect) {
-                    player.correctAnswers = (player.correctAnswers || 0) + 1;
-                    player.currentStreak = (answerStreak || 0);
-                    player.bestStreak = Math.max(player.bestStreak || 0, answerStreak || 0);
-                } else {
-                    player.wrongAnswers = (player.wrongAnswers || 0) + 1;
-                    player.currentStreak = 0;
-                }
-
-                await playerRepo.savePlayer(player);
+            if (!result.ok) {
+                const status = result.status === 404 ? super._404 : result.status === 400 ? super._400 : super._500;
+                return res.send(super.response(status, null, [result.message]));
             }
 
             return res.send(super.response(super._200, {
-                answer: playerAnswer,
-                player: player
+                answer: result.answer,
+                player: result.player,
+                isCorrect: result.isCorrect,
+                pointsEarned: result.pointsEarned
             }));
         } catch (error) {
             return res.send(super.response(super._500, null, super.ex(error)));
@@ -488,6 +543,15 @@ class GameController extends Controller {
                 return res.send(super.response(super._400, null, ['Game session ID is required']));
             }
 
+            const existing = await repo.getSessionById(gameSessionId);
+            if (!existing) {
+                return res.send(super.response(super._404, null, ['Game session not found']));
+            }
+
+            if (!isHost(existing, req.user?.address)) {
+                return res.send(super.response(super._403, null, ['Only the game host can end this game']));
+            }
+
             const session = await repo.endSession(gameSessionId);
 
             if (!session) {
@@ -513,6 +577,15 @@ class GameController extends Controller {
 
             if (!gameSessionId) {
                 return res.send(super.response(super._400, null, ['Game session ID is required']));
+            }
+
+            const existing = await repo.getSessionById(gameSessionId);
+            if (!existing) {
+                return res.send(super.response(super._404, null, ['Game session not found']));
+            }
+
+            if (!isHost(existing, req.user?.address)) {
+                return res.send(super.response(super._403, null, ['Only the game host can delete this game']));
             }
 
             const deleted = await repo.deleteSession(gameSessionId);

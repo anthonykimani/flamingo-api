@@ -41,20 +41,28 @@ export class AnswerRepository {
         answer?: Answer,
         skip?: number,
         take?: number,
-    ) {
+    ): Promise<Answer[]> {
         try {
-            let answerData: Answer[] = [];
+            const hasFilter = answer && (answer.id || answer.correctAnswer !== undefined || answer.deleted !== undefined);
 
-            if(!answerData || Object.keys(answerData).length === 0) {
-                answerData = await this.repo.find({
-                    where: {
-                        deleted: false
-                    },
-                    relations: ['question']
-                })
+            if (hasFilter) {
+                return await this.repo.find({
+                    where: [
+                        { id: answer.id },
+                        { correctAnswer: answer.correctAnswer }
+                    ].filter(Boolean),
+                    relations: ['question'],
+                    skip: skip || 0,
+                    take: take || 20
+                });
             }
 
-            return answerData;
+            return await this.repo.find({
+                where: { deleted: false },
+                relations: ['question'],
+                skip: skip || 0,
+                take: take || 20
+            });
         } catch (error) {
             throw error
         }
