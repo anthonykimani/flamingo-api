@@ -3,6 +3,7 @@ import Controller from "./controller";
 import crypto from "crypto";
 import jwt from "jsonwebtoken";
 import { recoverAddress, hashMessage } from "viem";
+import { verifySiweMessage } from "@worldcoin/minikit-js/siwe";
 
 interface NonceEntry {
   nonce: string;
@@ -50,10 +51,10 @@ class AuthController extends Controller {
 
   public static async verify(req: Request, res: Response) {
     try {
-      const { walletAddress, signature, message } = req.body;
+      const { walletAddress, signature, message, nonce, payload } = req.body;
 
-      if (!walletAddress || !signature || !message) {
-        return res.send(super.response(super._400, null, ["walletAddress, signature, and message are required"]));
+      if (!walletAddress || typeof walletAddress !== "string") {
+        return res.send(super.response(super._400, null, ["walletAddress is required"]));
       }
 
       const normalized = walletAddress.toLowerCase();
@@ -68,7 +69,29 @@ class AuthController extends Controller {
         return res.send(super.response(super._400, null, ["Nonce expired. Request a new one"]));
       }
 
-      const signer = await recoverAddress({ hash: hashMessage(message), signature });
+      let signer: string;
+
+      if (payload && nonce) {
+        // World App (MiniKit walletAuth) SIWE flow — supports EIP-1271 smart accounts
+        try {
+          const verification = await verifySiweMessage(payload, nonce);
+          if (!verification.isValid) {
+            return res.send(super.response(super._401, null, ["SIWE signature is invalid"]));
+          }
+          signer = verification.siweMessageData.address ?? payload.address;
+        } catch (err: any) {
+          return res.send(super.response(super._401, null, [err?.message || "SIWE verification failed"]));
+        }
+      } else if (signature && message) {
+        // Legacy wagmi ECDSA flow
+        try {
+          signer = await recoverAddress({ hash: hashMessage(message), signature });
+        } catch (err: any) {
+          return res.send(super.response(super._401, null, [err?.message || "Signature verification failed"]));
+        }
+      } else {
+        return res.send(super.response(super._400, null, ["payload + nonce or signature + message are required"]));
+      }
 
       if (signer.toLowerCase() !== normalized) {
         return res.send(super.response(super._401, null, ["Signature does not match wallet address"]));
