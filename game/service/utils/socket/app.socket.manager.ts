@@ -432,7 +432,10 @@ export class SocketService {
 
     private async canStartGame(socket: Socket, game: any): Promise<boolean> {
         if (game.gameMode === GameMode.HANGOUTS) {
-            return socket.rooms.has(game.id);
+            if (isHostSocket(socket, game)) return true;
+            // No host connected → any player in the room may start the game.
+            const hostConnected = (this.hostSockets.get(game.id)?.size ?? 0) > 0;
+            return !hostConnected && socket.rooms.has(game.id);
         }
         if (game.gameMode === GameMode.TEAM_BUILDING) {
             if (isHostSocket(socket, game)) return true;
@@ -459,6 +462,19 @@ export class SocketService {
             if (!game) {
                 emitError(socket, 'Game not found');
                 return;
+            }
+
+            // If an auto-start already kicked off (Hangouts), an authorised
+            // start request (e.g. the host clicking "Start Now") cancels the
+            // pending auto-start and wins, rather than being silently ignored.
+            if (this.autoStartedGames.has(gameSessionId) || this.preGameTimers.has(gameSessionId)) {
+                this.autoStartedGames.delete(gameSessionId);
+                const preTimer = this.preGameTimers.get(gameSessionId);
+                if (preTimer) {
+                    clearInterval(preTimer);
+                    clearTimeout(preTimer);
+                    this.preGameTimers.delete(gameSessionId);
+                }
             }
 
             this.cancelLobbyTimer(gameSessionId);
