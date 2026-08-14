@@ -26,7 +26,7 @@ export class GameRepository {
                 currentQuestionIndex: 0,
                 questionDuration: questionDuration,
                 timeLeft: questionDuration,
-                status: GameState.WAITING,
+                status: GameState.CREATED,
                 ...(gameMode !== undefined && { gameMode }),
                 ...(hasPrizes !== undefined && { hasPrizes }),
                 ...(entryFee !== undefined && { entryFee }),
