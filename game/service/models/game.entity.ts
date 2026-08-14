@@ -18,6 +18,12 @@ export class Game extends BaseEntity {
     @Index()
     hostAddress?: string;
 
+    /** Player id of the current host after a permanent host transfer. Takes
+     *  precedence over hostAddress for authorising guest hosts. */
+    @Column({ type: 'uuid', nullable: true })
+    @Index()
+    hostPlayerId?: string;
+
     @ManyToOne(() => Quiz, (quiz: Quiz) => quiz.games)
     quiz: Quiz;
 
