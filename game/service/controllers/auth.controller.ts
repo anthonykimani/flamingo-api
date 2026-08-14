@@ -25,25 +25,29 @@ class AuthController extends Controller {
     try {
       const { walletAddress } = req.body;
 
-      if (!walletAddress || typeof walletAddress !== "string") {
-        return res.send(super.response(super._400, null, ["walletAddress is required"]));
-      }
-
-      const normalized = walletAddress.toLowerCase();
       const nonce = crypto.randomBytes(32).toString("hex");
       const expiresAt = Date.now() + NONCE_TTL_MS;
 
-      nonceStore.set(normalized, { nonce, expiresAt });
+      // Key the nonce by its own value so the SIWE (World App) flow can look
+      // it up without knowing the wallet address ahead of time.
+      nonceStore.set(`nonce:${nonce}`, { nonce, expiresAt });
 
-      const message = [
-        "Sign in to Flamingo",
-        "",
-        `Wallet: ${normalized}`,
-        `Nonce: ${nonce}`,
-        `Issued: ${new Date().toISOString()}`,
-      ].join("\n");
+      if (walletAddress && typeof walletAddress === "string") {
+        const normalized = walletAddress.toLowerCase();
+        nonceStore.set(normalized, { nonce, expiresAt });
 
-      return res.send(super.response(super._200, { nonce, message }));
+        const message = [
+          "Sign in to Flamingo",
+          "",
+          `Wallet: ${normalized}`,
+          `Nonce: ${nonce}`,
+          `Issued: ${new Date().toISOString()}`,
+        ].join("\n");
+
+        return res.send(super.response(super._200, { nonce, message }));
+      }
+
+      return res.send(super.response(super._200, { nonce }));
     } catch (error) {
       return res.send(super.response(super._500, null, super.ex(error)));
     }
@@ -53,8 +57,56 @@ class AuthController extends Controller {
     try {
       const { walletAddress, signature, message, nonce, payload } = req.body;
 
+      if (payload && nonce) {
+        // World App (MiniKit walletAuth) SIWE flow — supports EIP-1271 smart accounts.
+        // No walletAddress required: the address is derived from the SIWE payload.
+        const stored = nonceStore.get(`nonce:${nonce}`);
+
+        if (!stored) {
+          return res.send(super.response(super._400, null, ["No nonce requested. Call /auth/nonce first"]));
+        }
+
+        if (Date.now() > stored.expiresAt) {
+          nonceStore.delete(`nonce:${nonce}`);
+          return res.send(super.response(super._400, null, ["Nonce expired. Request a new one"]));
+        }
+
+        let signer: string;
+
+        try {
+          const verification = await verifySiweMessage(payload, nonce);
+          if (!verification.isValid) {
+            return res.send(super.response(super._401, null, ["SIWE signature is invalid"]));
+          }
+          signer = verification.siweMessageData.address ?? payload.address;
+        } catch (err: any) {
+          return res.send(super.response(super._401, null, [err?.message || "SIWE verification failed"]));
+        }
+
+        const normalized = signer.toLowerCase();
+        nonceStore.delete(`nonce:${nonce}`);
+        nonceStore.delete(normalized);
+
+        const tokenSecret = String(process.env.TOKEN_SECRET);
+        const tokenIssuer = String(process.env.TOKEN_ISSUER);
+        const tokenExpiry = Number(String(process.env.TOKEN_EXPIRY)) || 86400;
+
+        const token = jwt.sign(
+          { address: normalized, role: "player" },
+          tokenSecret,
+          { expiresIn: tokenExpiry, issuer: tokenIssuer }
+        );
+
+        return res.send(super.response(super._200, { token }));
+      }
+
+      // Legacy wagmi ECDSA flow
       if (!walletAddress || typeof walletAddress !== "string") {
         return res.send(super.response(super._400, null, ["walletAddress is required"]));
+      }
+
+      if (!signature || !message) {
+        return res.send(super.response(super._400, null, ["signature and message are required"]));
       }
 
       const normalized = walletAddress.toLowerCase();
@@ -71,26 +123,10 @@ class AuthController extends Controller {
 
       let signer: string;
 
-      if (payload && nonce) {
-        // World App (MiniKit walletAuth) SIWE flow — supports EIP-1271 smart accounts
-        try {
-          const verification = await verifySiweMessage(payload, nonce);
-          if (!verification.isValid) {
-            return res.send(super.response(super._401, null, ["SIWE signature is invalid"]));
-          }
-          signer = verification.siweMessageData.address ?? payload.address;
-        } catch (err: any) {
-          return res.send(super.response(super._401, null, [err?.message || "SIWE verification failed"]));
-        }
-      } else if (signature && message) {
-        // Legacy wagmi ECDSA flow
-        try {
-          signer = await recoverAddress({ hash: hashMessage(message), signature });
-        } catch (err: any) {
-          return res.send(super.response(super._401, null, [err?.message || "Signature verification failed"]));
-        }
-      } else {
-        return res.send(super.response(super._400, null, ["payload + nonce or signature + message are required"]));
+      try {
+        signer = await recoverAddress({ hash: hashMessage(message), signature });
+      } catch (err: any) {
+        return res.send(super.response(super._401, null, [err?.message || "Signature verification failed"]));
       }
 
       if (signer.toLowerCase() !== normalized) {
