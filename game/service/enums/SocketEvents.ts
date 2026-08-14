@@ -8,6 +8,9 @@ export enum SocketEvents {
     LEAVE_GAME = 'leave-game',
     START_GAME = 'start-game',
     GAME_STARTED = 'game-started',
+    CLAIM_HOST = 'claim-host',
+    HOST_STATUS = 'host-status',
+    HOST_TRANSFERRED = 'host-transferred',
     
     // Player Events
     PLAYER_JOINED = 'player-joined',

@@ -23,10 +23,22 @@ function walletUser(socket: Socket): WalletTokenPayload | null {
 }
 
 /** True when the socket's wallet owns this game session */
-function isHostSocket(socket: Socket, game: { hostAddress?: string }): boolean {
+function isHostSocket(socket: Socket, game: { hostAddress?: string; hostPlayerId?: string }): boolean {
     const user = walletUser(socket);
-    return !!game.hostAddress && !!user?.address &&
-        game.hostAddress.toLowerCase() === user.address.toLowerCase();
+    if (!!game.hostAddress && !!user?.address &&
+        game.hostAddress.toLowerCase() === user.address.toLowerCase()) {
+        return true;
+    }
+
+    // Permanent host transfer: a guest host is identified by hostPlayerId.
+    if (game.hostPlayerId) {
+        const auth = socket.data.user as TokenPayload | undefined;
+        if (auth && isGuestPayload(auth) && auth.playerId === game.hostPlayerId) {
+            return true;
+        }
+    }
+
+    return false;
 }
 
 export class SocketService {
@@ -103,6 +115,11 @@ export class SocketService {
             // Start game
             socket.on(SocketEvents.START_GAME, async (data: { gameSessionId: string }) => {
                 await this.handleStartGame(socket, data);
+            });
+
+            // Claim host (permanent host transfer)
+            socket.on(SocketEvents.CLAIM_HOST, async (data: { gameSessionId: string }) => {
+                await this.handleClaimHost(socket, data);
             });
 
             // Next question
@@ -202,6 +219,8 @@ export class SocketService {
                     message: `${playerName} joined successfully`,
                     isHost: playerName === 'Host'
                 });
+
+                this.broadcastHostStatus(gameSessionId);
                 return;
             }
 
@@ -259,11 +278,22 @@ export class SocketService {
                 this.gameRepository.getSessionById(gameSessionId)
             ]);
 
+            // If this player is the transferred host, track their socket as a
+            // host socket so host presence stays accurate on reconnect.
+            if (currentGame?.hostPlayerId && currentGame.hostPlayerId === player.id) {
+                if (!this.hostSockets.has(gameSessionId)) {
+                    this.hostSockets.set(gameSessionId, new Set());
+                }
+                this.hostSockets.get(gameSessionId)!.add(socket.id);
+            }
+
             // Confirm join to the player with current game state
             socket.emit(SocketEvents.JOINED_GAME, {
                 success: true,
                 player: player,
-                gameState: currentGame?.status || game.status
+                gameState: currentGame?.status || game.status,
+                hostPresent: this.isHostConnected(gameSessionId),
+                isHost: !!currentGame?.hostPlayerId && currentGame.hostPlayerId === player.id
             });
 
             // Notify all clients in the room about the new player
@@ -275,23 +305,10 @@ export class SocketService {
 
             console.log(`✅ Player ${playerName} joined game ${gameSessionId}`);
 
-            if (game.status === GameState.CREATED) {
-                if (game.gameMode === GameMode.HANGOUTS && !this.lobbyTimers.has(gameSessionId)) {
-                    this.startLobbyCountdown(gameSessionId);
-                } else if (game.gameMode === GameMode.TEAM_BUILDING && !this.designatedHosts.has(gameSessionId)) {
-                    const allPlayers = await this.playerRepository.getSessionPlayers(gameSessionId);
-                    if (allPlayers.length === 1) {
-                        this.designatedHosts.set(gameSessionId, playerName);
-                        const hostSock = this.hostSockets.get(gameSessionId);
-                        if (!hostSock || hostSock.size === 0) {
-                            this.io?.to(gameSessionId).emit('host-transferred', {
-                                successorName: playerName,
-                                gameSessionId
-                            });
-                        }
-                    }
-                }
-            }
+            this.broadcastHostStatus(gameSessionId);
+
+            // No auto-start on join. Players wait in the lobby; a host (or a
+            // player who claims host / plays solo) starts the game explicitly.
         } catch (error) {
             console.error('Error in handleJoinGame:', error);
             emitError(socket, 'Failed to join game');
@@ -302,6 +319,93 @@ export class SocketService {
         if (this.lobbyTimers.has(gameSessionId)) {
             clearInterval(this.lobbyTimers.get(gameSessionId)!);
             this.lobbyTimers.delete(gameSessionId);
+        }
+    }
+
+    /** Whether at least one host socket is currently connected to the room. */
+    private isHostConnected(gameSessionId: string): boolean {
+        return (this.hostSockets.get(gameSessionId)?.size ?? 0) > 0;
+    }
+
+    /** Tell everyone in the room whether a host is present. */
+    private broadcastHostStatus(gameSessionId: string) {
+        this.io?.to(gameSessionId).emit(SocketEvents.HOST_STATUS, {
+            present: this.isHostConnected(gameSessionId),
+            gameSessionId
+        });
+    }
+
+    /** A player claims host ownership permanently. Used when no host is present. */
+    private async handleClaimHost(socket: Socket, data: { gameSessionId: string }) {
+        try {
+            const { gameSessionId } = data;
+            const auth = socket.data.user as TokenPayload;
+
+            const game = await this.gameRepository.getSessionById(gameSessionId);
+            if (!game) {
+                emitError(socket, 'Game session not found');
+                return;
+            }
+
+            if (game.status !== GameState.CREATED && game.status !== GameState.WAITING) {
+                emitError(socket, 'Game has already started');
+                return;
+            }
+
+            // Only claimable when no host is connected.
+            if (this.isHostConnected(gameSessionId)) {
+                emitError(socket, 'A host is already present');
+                return;
+            }
+
+            // Resolve the claiming player: guest token carries playerId; a
+            // wallet player must be looked up by session + wallet.
+            let playerId: string | undefined;
+            let walletAddress: string | undefined;
+
+            if (isGuestPayload(auth)) {
+                if (auth.gameSessionId !== gameSessionId) {
+                    emitError(socket, 'Invalid session for this token');
+                    return;
+                }
+                playerId = auth.playerId;
+            } else {
+                walletAddress = (auth as WalletTokenPayload).address?.toLowerCase();
+                if (walletAddress) {
+                    const players = await this.playerRepository.getSessionPlayers(gameSessionId);
+                    const match = players.find(p => p.walletAddress?.toLowerCase() === walletAddress);
+                    if (match) playerId = match.id;
+                }
+            }
+
+            if (!playerId) {
+                emitError(socket, 'Join the game before claiming host');
+                return;
+            }
+
+            await this.gameRepository.transferHost(gameSessionId, playerId, walletAddress);
+
+            // Track this socket as a host socket so host presence stays accurate.
+            if (!this.hostSockets.has(gameSessionId)) {
+                this.hostSockets.set(gameSessionId, new Set());
+            }
+            this.hostSockets.get(gameSessionId)!.add(socket.id);
+
+            const playerName = isGuestPayload(auth)
+                ? auth.playerName
+                : (await this.playerRepository.getPlayerById(playerId))?.playerName;
+
+            this.io?.to(gameSessionId).emit(SocketEvents.HOST_TRANSFERRED, {
+                successorName: playerName,
+                gameSessionId
+            });
+
+            this.broadcastHostStatus(gameSessionId);
+
+            console.log(`👑 Host claimed by ${playerName} (${playerId}) for game ${gameSessionId}`);
+        } catch (error) {
+            console.error('Error in handleClaimHost:', error);
+            emitError(socket, 'Failed to claim host');
         }
     }
 
@@ -413,17 +517,12 @@ export class SocketService {
                 sockets.delete(socket.id);
 
                 const game = await this.gameRepository.getSessionById(gameSessionId);
-                if (!game || game.status !== GameState.CREATED || game.gameMode !== GameMode.TEAM_BUILDING) continue;
+                if (!game) continue;
 
-                const successorName = this.designatedHosts.get(gameSessionId);
-                if (!successorName) continue;
+                // Tell the room the host is gone so players can claim host / play solo.
+                this.broadcastHostStatus(gameSessionId);
 
-                this.io?.to(gameSessionId).emit('host-transferred', {
-                    successorName,
-                    gameSessionId
-                });
-
-                console.log(`🔄 Host transferred to ${successorName} for game ${gameSessionId}`);
+                console.log(`🔌 Host socket left game ${gameSessionId}`);
             }
         } catch (error) {
             console.error('Error in handleDisconnect:', error);
@@ -431,27 +530,18 @@ export class SocketService {
     }
 
     private async canStartGame(socket: Socket, game: any): Promise<boolean> {
-        if (game.gameMode === GameMode.HANGOUTS) {
-            if (isHostSocket(socket, game)) return true;
-            // No host connected → any player in the room may start the game.
-            const hostConnected = (this.hostSockets.get(game.id)?.size ?? 0) > 0;
+        // A host (wallet or transferred guest) can always start.
+        if (isHostSocket(socket, game)) return true;
+
+        // No host connected → any player in the room may start the game
+        // (play solo / become host). Applies to Hangouts and Team Building.
+        if (game.gameMode === GameMode.HANGOUTS || game.gameMode === GameMode.TEAM_BUILDING) {
+            const hostConnected = this.isHostConnected(game.id);
             return !hostConnected && socket.rooms.has(game.id);
         }
-        if (game.gameMode === GameMode.TEAM_BUILDING) {
-            if (isHostSocket(socket, game)) return true;
-            const auth = socket.data.user as TokenPayload;
-            if (isGuestPayload(auth) && this.designatedHosts.get(game.id) === auth.playerName) return true;
-            if (!isGuestPayload(auth)) {
-                const walletAddr = (auth as WalletTokenPayload).address?.toLowerCase();
-                if (walletAddr) {
-                    const players = await this.playerRepository.getSessionPlayers(game.id);
-                    const match = players.find(p => p.walletAddress?.toLowerCase() === walletAddr);
-                    if (match && this.designatedHosts.get(game.id) === match.playerName) return true;
-                }
-            }
-            return false;
-        }
-        return isHostSocket(socket, game);
+
+        // Degen PvP: host only (deposits/escrow).
+        return false;
     }
 
     private async handleStartGame(socket: Socket, data: { gameSessionId: string }) {

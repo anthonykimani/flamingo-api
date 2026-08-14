@@ -495,6 +495,26 @@ export class GameRepository {
     }
 
     /**
+     * Permanently transfer host ownership to a player. `hostPlayerId` is the
+     * authoritative host for guest hosts; `hostAddress` is set to the new
+     * host's wallet (or null for a guest) so the previous host loses control.
+     */
+    async transferHost(id: string, playerId: string, walletAddress?: string): Promise<Game | null> {
+        try {
+            const session = await this.repo.findOne({ where: { id } });
+            if (!session) return null;
+
+            session.hostPlayerId = playerId;
+            session.hostAddress = walletAddress || undefined;
+            session.updatedAt = new Date();
+
+            return await this.repo.save(session);
+        } catch (error) {
+            throw error;
+        }
+    }
+
+    /**
      * Save/update game session
      */
     async saveSession(game: Game): Promise<Game> {
